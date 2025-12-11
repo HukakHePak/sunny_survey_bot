@@ -1,0 +1,15 @@
+version: '3.8'
+services:
+  tglibot:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/data
+    networks:
+      - tglinet
+
+networks:
+  tglinet:
+    driver: bridge

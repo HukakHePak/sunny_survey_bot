@@ -1,0 +1,21 @@
+{
+  "name": "tglibot",
+  "version": "0.1.0",
+  "description": "Telegram voting bot scaffold",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts"
+  },
+  "dependencies": {
+    "grammy": "^1.38.4",
+    "better-sqlite3": "^12.5.0",
+    "dotenv": "^17.2.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "ts-node-dev": "^2.0.0",
+    "@types/node": "^25.0.0"
+  }
+}
