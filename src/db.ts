@@ -96,8 +96,16 @@ export function initDb(dbPath: string) {
   }
 
   function isNominationClosed(id: number) {
-    const r = db.prepare('SELECT closed FROM nominations WHERE id = ?').get(id);
-    return r ? Boolean(r.closed) : false;
+    try {
+      const r = db.prepare('SELECT closed FROM nominations WHERE id = ?').get(id);
+      return r ? Boolean(r.closed) : false;
+    } catch (e) {
+      // If column is missing, try to add it (best-effort) and treat as not closed
+      try {
+        db.prepare('ALTER TABLE nominations ADD COLUMN closed INTEGER DEFAULT 0').run();
+      } catch (ignored) {}
+      return false;
+    }
   }
 
   function closeNomination(id: number) {
