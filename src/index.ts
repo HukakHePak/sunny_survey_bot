@@ -1,130 +1,29 @@
 import 'dotenv/config';
-import { Bot, InlineKeyboard, Keyboard } from 'grammy';
+import { Bot, InlineKeyboard } from 'grammy';
 import { initDb } from './db';
 import path from 'path';
 import fs from 'fs';
-
-const token = process.env.BOT_TOKEN;
-if (!token) {
-  console.error('BOT_TOKEN is not set in environment');
-  process.exit(1);
-}
-
-const dbPath = process.env.DB_PATH || path.join(process.cwd(), 'bot.db');
-const db = initDb(dbPath);
-
-const bot = new Bot(token);
-
-// Optional admin restriction (comma-separated chat ids)
-const ADMIN_IDS = process.env.ADMIN_CHAT_ID ? process.env.ADMIN_CHAT_ID.split(',').map((s) => s.trim()) : null;
-function isAdmin(userId?: number) {
-  if (!ADMIN_IDS) return true;
-  if (!userId) return false;
-  return ADMIN_IDS.includes(String(userId));
-}
-
-// Keep track of which nomination position to show next (in-memory)
-let nextPosition = 1;
-
-const LABEL_WHOAMI = 'Мой ID';
-const LABEL_ADD_NOM = 'Добавить номинацию';
-const LABEL_SHOW_NEXT = 'Показать следующую';
-const LABEL_TOGGLE_REPEAT = 'Вкл/Выкл повторы';
-const LABEL_CLOSE_NOM = 'Закрыть номинацию (инструкция)';
-const LABEL_EXPORT = 'Экспорт результатов';
-
-bot.command('start', async (ctx) => {
-  const fromId = ctx.from?.id;
-  const isAdm = isAdmin(fromId);
-  const kb = new Keyboard();
-  kb.text(LABEL_WHOAMI);
-  kb.row();
-  kb.text(LABEL_ADD_NOM);
-  kb.text(LABEL_SHOW_NEXT);
-  if (isAdm) {
-    kb.row();
-    kb.text(LABEL_TOGGLE_REPEAT);
-    kb.text(LABEL_CLOSE_NOM);
-    kb.row();
-    kb.text(LABEL_EXPORT);
-  }
-  await ctx.reply('Привет! Номинации: используйте кнопки меню или команды.', { reply_markup: kb });
-});
-
-// Utility: tell user their Telegram numeric id
-bot.command('whoami', async (ctx) => {
-  const userId = ctx.from?.id;
-  if (!userId) return ctx.reply('Не удалось определить ваш id.');
-  return ctx.reply(`Ваш Telegram ID: ${userId}`);
-});
-
-// Admin: create nomination
-bot.command('add_nomination', async (ctx) => {
-  const fromId = ctx.from?.id;
-  if (!isAdmin(fromId)) return ctx.reply('Нет прав.');
-  const parts = ctx.message?.text?.split(' ') || [];
-  const title = parts.slice(1).join(' ').trim();
-  if (!title) return ctx.reply('Использование: /add_nomination <title>');
-  const nom = db.createNomination(title);
-  return ctx.reply(`Создана номинация: id=${nom.id} position=${nom.position}`);
-});
-
-// Admin: show next nomination (sends videos and keyboard)
-bot.command('show_next', async (ctx) => {
-  const fromId = ctx.from?.id;
-  if (!isAdmin(fromId)) return ctx.reply('Нет прав.');
-  const nom = db.getNominationByPosition(nextPosition);
-  if (!nom) return ctx.reply('Новых номинаций нет.');
-  const videos = db.getVideosByNomination(nom.id);
-  if (!videos || videos.length === 0) return ctx.reply('У этой номинации нет привязанных видео.');
-
-  await ctx.reply(`Номинация: ${nom.title}`);
-  for (const v of videos) {
-    try {
-      await ctx.replyWithVideo(v.file_id, { caption: v.participant_nick || '' });
-    } catch (e) {
-      await ctx.reply(`Не удалось отправить видео id=${v.id}`);
-    }
-  }
-
-  const kb = new InlineKeyboard();
-  for (const v of videos) {
-    kb.text(v.participant_nick || `#${v.id}`, `vote:${nom.id}:${v.id}`);
-  }
-  await ctx.reply('Выбери участника:', { reply_markup: kb });
-  nextPosition += 1;
-});
-
-// Helper: send nomination and videos to a user (private)
-async function sendNominationToUser(userId: number, nom: any) {
-  try {
-    await bot.api.sendMessage(userId, `Номинация: ${nom.title}`);
-    const videos = db.getVideosByNomination(nom.id);
-    for (const v of videos) {
-      try {
-        await bot.api.sendVideo(userId, v.file_id, { caption: v.participant_nick || '' });
-      } catch (e) {
-        // ignore per-video errors
-      }
-    }
-    const kb = new InlineKeyboard();
-    for (const v of videos) kb.text(v.participant_nick || `#${v.id}`, `vote:${nom.id}:${v.id}`);
-    await bot.api.sendMessage(userId, 'Выбери участника:', { reply_markup: kb });
-  } catch (e) {
-    // cannot send private message (user didn't start bot or blocked)
-  }
-}
-
-// Accept video messages with caption: /add_video <nomination_id> <nick>
 bot.on('message', async (ctx) => {
   const msg = ctx.message as any;
-  const text: string | undefined = msg?.text;
   const caption: string | undefined = msg?.caption;
+  // Handle video messages with caption: /add_video <nomination_id> <nick>
+  if (caption && caption.startsWith('/add_video')) {
+    const parts = caption.split(/\s+/);
+    if (parts.length < 3) return ctx.reply('Использование в подписи видео: /add_video <nomination_id> <participant_nick>');
+    const nominationId = Number(parts[1]);
+    const nick = parts.slice(2).join(' ');
+    if (!nominationId || !nick) return ctx.reply('Неверные параметры.');
+    // get file id
+    const fileId = msg.video?.file_id || msg.document?.file_id;
+    if (!fileId) return ctx.reply('Прикрепите видео (как video или документ).');
+    const res = db.addVideo(nominationId, fileId, nick);
+    return ctx.reply(`Видео добавлено id=${res.id} к номинации ${nominationId}`);
+  }
 
-  // Handle reply-keyboard labels
-  if (text) {
-    const fromId = ctx.from?.id;
-    // Мой ID
+  // fallback: ignore plain text (we removed reply keyboard), only commands
+  if (msg.text && msg.text.startsWith('/')) return;
+  // otherwise do nothing (no reply keyboard)
+});
     if (text === LABEL_WHOAMI) {
       const userId = ctx.from?.id;
       if (!userId) return ctx.reply('Не удалось определить ваш id.');
@@ -319,9 +218,21 @@ if (process.env.DISABLE_TELEGRAM === 'true') {
 } else {
   (async () => {
     try {
-      await bot.api.setMyCommands(botCommands);
+      if (ADMIN_IDS && ADMIN_IDS.length > 0) {
+        // register commands only for each admin's private chat so ordinary users don't see slash-commands
+        for (const aid of ADMIN_IDS) {
+          const idNum = Number(aid);
+          if (!isNaN(idNum)) {
+            try {
+              await bot.api.setMyCommands(botCommands, { scope: { type: 'chat', chat_id: idNum } as any });
+            } catch (e) {
+              console.warn('Не удалось зарегистрировать команды для admin', aid, e);
+            }
+          }
+        }
+      }
     } catch (e) {
-      console.warn('Не удалось зарегистрировать команды бота:', e);
+      console.warn('Ошибка при регистрации команд бота:', e);
     }
     bot.start();
     console.log('Bot started');
