@@ -4,7 +4,7 @@ import * as nominationService from '../services/nominationService';
 import * as userService from '../services/userService';
 import sessions from '../state/creationSessions';
 
-export function registerHandlers(bot: Bot, db: any, isAdmin: (id?: number) => boolean) {
+export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: number; username?: string } | number | string) => boolean) {
   // begin callback: initialize user position and send first nomination
   bot.callbackQuery('begin', async (ctx) => {
     await ctx.answerCallbackQuery();
