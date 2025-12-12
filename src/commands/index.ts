@@ -62,7 +62,8 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
     const userId = from?.id; if (!userId) return ctx.reply('Не удалось определить ваш id.');
     sessions.startAwaitingTitle(userId);
-    return ctx.reply('Отправьте название номинации (текст).');
+    const kb = new InlineKeyboard().text('Отмена', 'add_cancel');
+    return ctx.reply('Отправьте название номинации (текст).', { reply_markup: kb });
   });
 
   // /show_next removed — admin flow replaced by other controls

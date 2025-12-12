@@ -7,6 +7,8 @@ import sessions from '../state/creationSessions';
 export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: number; username?: string } | number | string) => boolean) {
   // track messages sent by the bot per user (so we can delete them on retake)
   const userMessages: Record<number, number[]> = {};
+  // track admin control message (save/cancel) per admin during nomination creation
+  const adminControlsMsg: Record<number, number> = {};
 
   const pushMsg = (userId: number, msg: any) => {
     try {
@@ -59,7 +61,8 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
             const title = msg.text.trim();
             // do not create nomination yet — wait for at least one video
             sessions.startCollectingPending(userId, title);
-            await ctx.reply(`Название получено: "${title}". Теперь отправьте первое видео с подписью (ник участника). Номинация будет создана только после добавления видео. Отправьте любое текстовое сообщение или команду, чтобы отменить.`);
+            const kb = new InlineKeyboard().text('Отмена', 'add_cancel');
+            await ctx.reply(`Название получено: "${title}". Теперь отправьте первое видео с подписью (ник участника). Номинация будет создана только после добавления видео.`, { reply_markup: kb });
           } else {
             await ctx.reply('Ожидаю название номинации (текст).');
           }
@@ -76,18 +79,21 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
             } else {
               const res = nominationService.addVideoToNomination(db, session.nominationId, fileId, nick);
               await ctx.reply(`Видео участника "${nick}" добавлено.`);
+              try {
+                const vids = db.selectVideosByNomination ? db.selectVideosByNomination(session.nominationId) : [];
+                if (vids && vids.length >= 2) {
+                  const mid = adminControlsMsg[userId];
+                  if (mid) {
+                    try { await bot.api.deleteMessage(userId, mid); } catch (e) {}
+                    delete adminControlsMsg[userId];
+                  }
+                }
+              } catch (e) { /* ignore */ }
             }
             return;
           }
-          // any non-video message or command ends collection
-          const vids = db.selectVideosByNomination(session.nominationId) || [];
-          sessions.endSession(userId);
-          if (!vids || vids.length < 2) {
-            try { nominationService.deleteNomination(db, session.nominationId); } catch (e) {}
-            await ctx.reply('Ошибка: для номинации требуется минимум 2 видео. Номинация не создана.');
-          } else {
-            await ctx.reply('Добавление видео завершено.');
-          }
+          // any non-video message no longer auto-ends collection; instruct admin to use buttons
+          await ctx.reply('Используйте кнопку "Сохранить" для завершения или "Отмена" для отмены добавления номинации.');
           return;
         }
 
@@ -106,7 +112,10 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
               const nom = nominationService.createNomination(db, title);
               nominationService.addVideoToNomination(db, nom.id, fileId, nick);
               sessions.startCollecting(userId, nom.id);
-              await ctx.reply(`Номинация "${title}" создана и первое видео участника "${nick}" добавлено.`);
+              // send control buttons (Save / Cancel)
+              const kb = new InlineKeyboard().text('Сохранить', 'add_save').text('Отмена', 'add_cancel');
+              const m = await ctx.reply(`Номинация "${title}" создана и первое видео участника "${nick}" добавлено. Добавляйте следующие видео или сохраните номинацию.`, { reply_markup: kb });
+              try { adminControlsMsg[userId] = (m as any).message_id; } catch (e) {}
             } catch (e) {
               await ctx.reply('Ошибка при создании номинации.');
             }
@@ -270,6 +279,59 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     await ctx.answerCallbackQuery();
     const parts = (ctx.callbackQuery.data || '').split(':');
     try { await ctx.editMessageText('Удаление отменено.'); } catch (e) { try { await ctx.reply('Удаление отменено.'); } catch (e) {} }
+  });
+
+  // admin add nomination: cancel or save
+  bot.callbackQuery('add_cancel', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const userId = ctx.from?.id; if (!userId) return;
+    if (!isAdmin(ctx.from)) return ctx.answerCallbackQuery({ text: 'Нет прав.' });
+    const session = sessions.getSession(userId);
+    try {
+      if (!session) {
+        try { await ctx.editMessageText('Добавление отменено.'); } catch (e) { await ctx.reply('Добавление отменено.'); }
+        return;
+      }
+      if (session.state === 'collecting_videos_pending') {
+        sessions.endSession(userId);
+        try { await ctx.editMessageText('Добавление отменено. Номинация не создана.'); } catch (e) { await ctx.reply('Добавление отменено. Номинация не создана.'); }
+        return;
+      }
+      if (session.state === 'collecting_videos') {
+        const nomId = (session as any).nominationId;
+        try { nominationService.deleteNomination(db, nomId); } catch (e) {}
+        sessions.endSession(userId);
+        try {
+          // remove control message if present
+          const mid = adminControlsMsg[userId]; if (mid) { try { await bot.api.deleteMessage(userId, mid); } catch (e) {} delete adminControlsMsg[userId]; }
+        } catch (e) {}
+        try { await ctx.editMessageText('Добавление отменено. Номинация не создана.'); } catch (e) { await ctx.reply('Добавление отменено. Номинация не создана.'); }
+        return;
+      }
+    } catch (e) { try { await ctx.reply('Ошибка обработки отмены.'); } catch (er) {} }
+  });
+
+  bot.callbackQuery('add_save', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const userId = ctx.from?.id; if (!userId) return;
+    if (!isAdmin(ctx.from)) return ctx.answerCallbackQuery({ text: 'Нет прав.' });
+    const session = sessions.getSession(userId);
+    if (!session || session.state !== 'collecting_videos') {
+      try { await ctx.reply('Нет активной сессии добавления номинации.'); } catch (e) {}
+      return;
+    }
+    const nomId = (session as any).nominationId;
+    const vids = db.selectVideosByNomination ? db.selectVideosByNomination(nomId) : [];
+    if (!vids || vids.length < 2) {
+      try { await ctx.reply('Нельзя сохранить — для номинации требуется минимум 2 видео.'); } catch (e) {}
+      return;
+    }
+    // finalize
+    sessions.endSession(userId);
+    try {
+      const mid = adminControlsMsg[userId]; if (mid) { try { await bot.api.deleteMessage(userId, mid); } catch (e) {} delete adminControlsMsg[userId]; }
+    } catch (e) {}
+    try { await ctx.editMessageText('Номинация сохранена.'); } catch (e) { try { await ctx.reply('Номинация сохранена.'); } catch (er) {} }
   });
 
   // vipe (wipe votes) confirmation handlers
