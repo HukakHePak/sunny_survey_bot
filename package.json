@@ -9,13 +9,13 @@
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts"
   },
   "dependencies": {
-    "grammy": "^1.38.4",
     "better-sqlite3": "^12.5.0",
-    "dotenv": "^17.2.3"
+    "dotenv": "^17.2.3",
+    "grammy": "^1.38.4"
   },
   "devDependencies": {
-    "typescript": "^5.9.3",
+    "@types/node": "^25.0.1",
     "ts-node-dev": "^2.0.0",
-    "@types/node": "^25.0.0"
+    "typescript": "^5.9.3"
   }
 }
