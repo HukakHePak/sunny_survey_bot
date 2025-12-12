@@ -1,0 +1,17 @@
+services:
+  tglibot:
+    build: .
+    env_file:
+      - .env
+    command: npm run dev
+    volumes:
+      - ./:/app:delegated
+      - /app/node_modules
+      - ./data:/data
+    ports: []
+    networks:
+      - tglinet
+
+networks:
+  tglinet:
+    driver: bridge
