@@ -15,6 +15,17 @@ services:
     networks:
       - tglinet
 
+  pruner:
+    image: node:20-slim
+    working_dir: /app
+    env_file:
+      - .env
+    volumes:
+      - ./:/app:ro
+      - ./data:/data
+    command: sh -c "while true; do node scripts/prune_videos.js || true; sleep ${PRUNE_INTERVAL_SECONDS:-86400}; done"
+    restart: unless-stopped
+
 networks:
   tglinet:
     driver: bridge
