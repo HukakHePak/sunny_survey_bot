@@ -3,6 +3,23 @@ import * as nominationService from '../services/nominationService';
 
 export function registerCommands(bot: Bot, db: any, isAdmin: (id?: number) => boolean) {
   bot.command('start', async (ctx) => { await ctx.reply('Привет! Используйте /whoami или команды админа.'); });
+  
+  bot.command('start', async (ctx) => {
+    // Send welcome with list of nominations and 'Начать' button
+    try {
+      const noms = db.selectAllNominations ? db.selectAllNominations() : [];
+      if (!noms || noms.length === 0) {
+        await ctx.reply('Привет! В системе пока нет номинаций. Обратитесь к администратору.');
+        return;
+      }
+      const lines = noms.map((n: any) => `${n.position}. ${n.title}${n.closed ? ' (закрыта)' : ''}`);
+      const text = `Привет! Доступные номинации:\n${lines.join('\n')}\n\nНажмите «Начать», чтобы пройти голосование.`;
+      const kb = new InlineKeyboard().text('Начать', 'begin');
+      await ctx.reply(text, { reply_markup: kb });
+    } catch (e) {
+      await ctx.reply('Ошибка получения списка номинаций.');
+    }
+  });
 
   bot.command('whoami', async (ctx) => { const userId = ctx.from?.id; if (!userId) return ctx.reply('Не удалось определить ваш id.'); return ctx.reply(`Ваш Telegram ID: ${userId}`); });
 

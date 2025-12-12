@@ -4,6 +4,21 @@ import * as nominationService from '../services/nominationService';
 import * as userService from '../services/userService';
 
 export function registerHandlers(bot: Bot, db: any, isAdmin: (id?: number) => boolean) {
+  // begin callback: initialize user position and send first nomination
+  bot.callbackQuery('begin', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const userId = ctx.from?.id; if (!userId) return;
+    try {
+      // set user to first nomination
+      if (db.setUserPosition) db.setUserPosition(userId, 1);
+      const nom = db.selectNominationByPosition ? db.selectNominationByPosition(1) : null;
+      if (!nom) return ctx.reply('Нет номинаций для начала.');
+      await sendNominationToUser(bot, db, userId, nom);
+    } catch (e) {
+      // ignore
+    }
+  });
+
   bot.on('message', async (ctx) => {
     const msg = ctx.message as any; const caption: string | undefined = msg?.caption;
     if (caption && caption.startsWith('/add_video')) {
@@ -38,9 +53,18 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (id?: number) => bo
 export async function sendNominationToUser(bot: Bot, db: any, userId: number, nom: any) {
   try {
     await bot.api.sendMessage(userId, `Номинация: ${nom.title}`);
-    const videos = db.selectVideosByNomination(nom.id) || [];
+    const videos = (db.selectVideosByNomination && db.selectVideosByNomination(nom.id)) || [];
+    const first = videos.slice(0, 4);
+    // send up to 4 videos
+    for (const v of first) {
+      try {
+        await bot.api.sendVideo(userId, v.file_id, { caption: v.participant_nick || '' });
+      } catch (e) {
+        try { await bot.api.sendMessage(userId, `${v.participant_nick || ''} — видео недоступно`); } catch (e) {}
+      }
+    }
     const kb = new InlineKeyboard();
-    for (const v of videos) kb.text(v.participant_nick || `#${v.id}`, `vote:${nom.id}:${v.id}`);
+    for (const v of first) kb.text(v.participant_nick || `#${v.id}`, `vote:${nom.id}:${v.id}`);
     await bot.api.sendMessage(userId, 'Выбери участника:', { reply_markup: kb });
   } catch (e) { /* ignore send errors */ }
 }

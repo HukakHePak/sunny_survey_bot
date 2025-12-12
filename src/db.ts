@@ -87,6 +87,10 @@ export function initDb(dbPath: string) {
     return db.prepare('SELECT * FROM videos WHERE nomination_id = ? ORDER BY id').all(nominationId);
   }
 
+  function selectAllNominations() {
+    return db.prepare('SELECT id, title, position, closed FROM nominations ORDER BY position').all();
+  }
+
   function getSetting(key: string) {
     const r = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
     return r ? r.value : null;
@@ -176,5 +180,6 @@ export function initDb(dbPath: string) {
     updateCloseNomination,
     getUserPosition,
     setUserPosition,
+    selectAllNominations,
   };
 }
