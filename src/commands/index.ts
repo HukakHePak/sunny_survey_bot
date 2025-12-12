@@ -31,20 +31,18 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
         return;
       }
 
-      // If the user has already voted for all nominations, don't show the
-      // "Начать" button — this applies regardless of the repeat setting.
+      // Hide the "Начать" button only when the user has at least one vote
+      // and has voted for every nomination. This avoids hiding the button
+      // after a global votes wipe or when the user hasn't actually voted.
       const from = ctx.from;
       const userId = from?.id;
       if (userId) {
-        let allVoted = true;
+        let votesFound = 0;
         for (const n of noms) {
           const voteRow = db.selectUserVote ? db.selectUserVote(userId, n.id) : null;
-          if (!voteRow || !voteRow.video_id) {
-            allVoted = false;
-            break;
-          }
+          if (voteRow && voteRow.video_id) votesFound += 1;
         }
-        if (allVoted) {
+        if (votesFound > 0 && votesFound === noms.length) {
           text += `\n\nВы уже проголосовали.`;
           await ctx.reply(text);
           return;
