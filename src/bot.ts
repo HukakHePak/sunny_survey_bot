@@ -1,6 +1,7 @@
 import { Bot } from 'grammy';
 import { registerCommands } from './commands';
 import { registerHandlers } from './handlers';
+import CommandNames from './commands/commandNames';
 
 export async function startBot(token: string, db: any) {
   const bot = new Bot(token);
@@ -31,14 +32,14 @@ export async function startBot(token: string, db: any) {
   registerHandlers(bot, db, isAdmin);
 
   const botCommands = [
-    { command: 'start', description: 'Запустить бота' },
+    { command: CommandNames.Start, description: 'Запустить бота' },
     // `me` команда оставлена, но не показывается в меню
-    { command: 'add_nomination', description: 'Добавить номинацию' },
-    { command: 'switch_repeat_vote', description: 'Переключить повторные голоса' },
-    { command: 'switch_survey', description: 'Переключить приём заявок / голосование' },
-    { command: 'export_results', description: 'Экспорт результатов' },
-    { command: 'list_nominations', description: 'Показать список номинаций' },
-    { command: 'delete_nomination', description: 'Удалить номинацию' },
+    { command: CommandNames.Add, description: 'Добавить номинацию' },
+    { command: CommandNames.List, description: 'Показать номинации' },
+    { command: CommandNames.Delete, description: 'Удалить номинацию' },
+    { command: CommandNames.Survey, description: 'Возобновить/остановить голосование' },
+    { command: CommandNames.RepeatVote, description: 'Переключить повторные голоса' },
+    { command: CommandNames.Results, description: 'Экспорт результатов' },
   ];
 
   if (process.env.DISABLE_TELEGRAM === 'true') {

@@ -1,10 +1,11 @@
 import { Bot, InlineKeyboard } from 'grammy';
 import * as nominationService from '../services/nominationService';
 import sessions from '../state/creationSessions';
+import CommandNames from './commandNames';
 
 export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: number; username?: string } | number | string) => boolean) {
   // start: show nominations and 'Начать'
-  bot.command('start', async (ctx) => {
+  bot.command(CommandNames.Start, async (ctx) => {
     // Send welcome with list of nominations and 'Начать' button
     try {
       const noms = db.selectAllNominations ? db.selectAllNominations() : [];
@@ -21,9 +22,7 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     }
   });
 
-  bot.command('me', async (ctx) => { const user = ctx.from; if (!user?.id) return ctx.reply('Не удалось определить ваш id.'); return ctx.reply(`Ваш Telegram ID: ${user.id}`); });
-
-  bot.command('add_nomination', async (ctx) => {
+  bot.command(CommandNames.Add, async (ctx) => {
     const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
     const userId = from?.id; if (!userId) return ctx.reply('Не удалось определить ваш id.');
     sessions.startAwaitingTitle(userId);
@@ -32,38 +31,15 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
 
   // /show_next removed — admin flow replaced by other controls
 
-  bot.command('export_results', async (ctx) => {
+  bot.command(CommandNames.Results, async (ctx) => {
     const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
     const csv = nominationService.exportResults(db); const fn = `/data/results_${Date.now()}.csv`;
     try { (await import('fs')).default.writeFileSync(fn, csv, 'utf8'); await ctx.replyWithDocument({ source: (await import('fs')).default.createReadStream(fn) } as any); } catch (e) { await ctx.reply('Ошибка при создании файла результатов.'); }
   });
 
-  // Dev-only: seed test data
-  bot.command('seed', async (ctx) => {
-    const devMode = process.env.NODE_ENV === 'development' || process.env.DEV === 'true';
-    if (!devMode) return ctx.reply('Команда /seed доступна только в dev режиме.');
-    const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
-    try {
-      // wipe existing nominations/videos/votes (dev only)
-      if (db && db.db) {
-        db.db.prepare('DELETE FROM votes').run();
-        db.db.prepare('DELETE FROM videos').run();
-        db.db.prepare('DELETE FROM nominations').run();
-      }
-      const titles = ['Лучшее вступление', 'Лучшее соло', 'Лучший дуэт'];
-      for (const t of titles) {
-        const nom = nominationService.createNomination(db, t);
-        for (let i = 1; i <= 4; i++) {
-          nominationService.addVideoToNomination(db, nom.id, `file_${nom.id}_${i}`, `User${i}`);
-        }
-      }
-      return ctx.reply('DB заполнена тестовыми данными.');
-    } catch (e) {
-      return ctx.reply('Ошибка при заполнении тестовых данных.');
-    }
-  });
+  // /seed removed
 
-  bot.command('switch_repeat_vote', async (ctx) => {
+  bot.command(CommandNames.RepeatVote, async (ctx) => {
     const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
     const cur = db.getSetting ? db.getSetting('repeat_votes_allowed') : '0';
     const next = cur === '1' ? '0' : '1';
@@ -71,7 +47,7 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     return ctx.reply(`Повторное голосование теперь ${next === '1' ? 'разрешено' : 'запрещено'}`);
   });
 
-  bot.command('switch_survey', async (ctx) => {
+  bot.command(CommandNames.Survey, async (ctx) => {
     const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
     // toggle global 'accepting applications' setting. When off, voting disabled for all nominations.
     const cur = db.getSetting ? db.getSetting('accepting_applications') : '1';
@@ -81,23 +57,23 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
   });
 
   // list nominations for admin (to choose id to delete)
-  bot.command('list_nominations', async (ctx) => {
+  bot.command(CommandNames.List, async (ctx) => {
     const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
     const noms = nominationService.listNominations(db);
     if (!noms || noms.length === 0) return ctx.reply('Номинаций нет.');
     const kb = new InlineKeyboard();
     for (const n of noms) {
-      kb.text(`${n.position}. ${n.title}`, `view_nom:${n.id}`);
+      kb.text(`${n.position}. ${n.title}`, `view_nom:${n.id}`).row();
     }
     return ctx.reply('Кликните номинацию, чтобы просмотреть её:', { reply_markup: kb });
   });
 
-  bot.command('delete_nomination', async (ctx) => {
+  bot.command(CommandNames.Delete, async (ctx) => {
     const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
     const noms = nominationService.listNominations(db);
     if (!noms || noms.length === 0) return ctx.reply('Номинаций нет.');
     const kb = new InlineKeyboard();
-    for (const n of noms) kb.text(`${n.position}. ${n.title}`, `delete_nom:${n.id}`);
+    for (const n of noms) kb.text(`${n.position}. ${n.title}`, `delete_nom:${n.id}`).row();
     return ctx.reply('Выберите номинацию для удаления (будет запрос подтверждения):', { reply_markup: kb });
   });
 }

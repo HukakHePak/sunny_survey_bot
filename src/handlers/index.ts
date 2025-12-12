@@ -33,9 +33,9 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
         if (session.state === 'awaiting_title') {
           if (msg.text && !msg.text.startsWith('/')) {
             const title = msg.text.trim();
-            const nom = nominationService.createNomination(db, title);
-            sessions.startCollecting(userId, nom.id);
-            await ctx.reply(`Номинация "${title}" создана. Теперь отправляйте видео с подписью (ник участника). Отправьте любое текстовое сообщение или команду, чтобы закончить приём видео.`);
+            // do not create nomination yet — wait for at least one video
+            sessions.startCollectingPending(userId, title);
+            await ctx.reply(`Название получено: "${title}". Теперь отправьте первое видео с подписью (ник участника). Номинация будет создана только после добавления видео. Отправьте любое текстовое сообщение или команду, чтобы отменить.`);
           } else {
             await ctx.reply('Ожидаю название номинации (текст).');
           }
@@ -58,6 +58,33 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
           // any non-video message or command ends collection
           sessions.endSession(userId);
           await ctx.reply('Добавление видео завершено.');
+          return;
+        }
+
+        if (session.state === 'collecting_videos_pending') {
+          // waiting for first video to create nomination
+          const fileId = msg.video?.file_id || msg.document?.file_id;
+          if (fileId) {
+            const nick = msg.caption?.trim();
+            if (!nick) {
+              await ctx.reply('Ошибка: видео должно содержать имя участника в подписи. Видео не добавлено.');
+              return;
+            }
+            // create nomination now and add video
+            try {
+              const title = (session as any).title;
+              const nom = nominationService.createNomination(db, title);
+              nominationService.addVideoToNomination(db, nom.id, fileId, nick);
+              sessions.startCollecting(userId, nom.id);
+              await ctx.reply(`Номинация "${title}" создана и первое видео участника "${nick}" добавлено.`);
+            } catch (e) {
+              await ctx.reply('Ошибка при создании номинации.');
+            }
+            return;
+          }
+          // non-video -> cancel pending nomination
+          sessions.endSession(userId);
+          await ctx.reply('Добавление отменено. Номинация не создана.');
           return;
         }
       }
