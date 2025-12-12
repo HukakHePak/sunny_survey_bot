@@ -5,9 +5,24 @@ import * as userService from '../services/userService';
 import sessions from '../state/creationSessions';
 
 export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: number; username?: string } | number | string) => boolean) {
+  // track messages sent by the bot per user (so we can delete them on retake)
+  const userMessages: Record<number, number[]> = {};
+
+  const pushMsg = (userId: number, msg: any) => {
+    try {
+      if (!msg) return;
+      const mid = (msg as any).message_id || (msg as any).messageId || null;
+      if (!mid) return;
+      userMessages[userId] = userMessages[userId] || [];
+      userMessages[userId].push(mid);
+    } catch (e) { /* ignore */ }
+  };
+
   // begin callback: initialize user position and send first nomination
   bot.callbackQuery('begin', async (ctx) => {
     await ctx.answerCallbackQuery();
+    // delete the "Начать" message after click
+    try { await ctx.deleteMessage(); } catch (e) { /* ignore */ }
     const userId = ctx.from?.id; if (!userId) return;
     // if accepting applications is disabled, do not proceed
     const accepting = db.getSetting ? db.getSetting('accepting_applications') : '1';
@@ -24,7 +39,7 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
       while (nom && nom.closed) { pos += 1; nom = db.selectNominationByPosition ? db.selectNominationByPosition(pos) : null; }
       if (!nom) return ctx.reply('Нет номинаций для начала.');
       if (db.setUserPosition) db.setUserPosition(userId, pos);
-      await sendNominationToUser(bot, db, userId, nom);
+      await sendNominationToUser(bot, db, userId, nom, pushMsg);
     } catch (e) {
       // ignore
     }
@@ -124,7 +139,7 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     const participant = selected ? (selected.participant_nick || `#${selected.id}`) : `#${videoId}`;
     const title = nomination ? nomination.title : '';
     const text = `Вы проголосовали за ${participant}${title ? ' — ' + title : ''}`;
-    try { await ctx.editMessageText(text); } catch (e) { await ctx.reply(text); }
+    try { await ctx.editMessageText(text); } catch (e) { const m = await ctx.reply(text); pushMsg(userId, m); }
 
     // advance and skip closed nominations
     let nextPos = userService.advanceUserPosition(db, userId);
@@ -134,22 +149,81 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
       nextNom = nominationService.getNominationByPosition(db, nextPos);
     }
     if (nextNom) {
-      try { await sendNominationToUser(bot, db, userId, nextNom); } catch (e) {}
+      try { await sendNominationToUser(bot, db, userId, nextNom, pushMsg); } catch (e) {}
     } else {
       // no more nominations -> completion
       const kb = new InlineKeyboard().text('Завершить', 'finish');
-      try { await bot.api.sendMessage(userId, 'Вы проголосовали по всем номинациям. Нажмите Завершить.', { reply_markup: kb }); } catch (e) {}
+      try { const m = await bot.api.sendMessage(userId, 'Вы проголосовали по всем номинациям. Нажмите Завершить.', { reply_markup: kb }); pushMsg(userId, m); } catch (e) {}
     }
   });
 
   // finish callback: acknowledge and reset progress
   bot.callbackQuery('finish', async (ctx) => {
     await ctx.answerCallbackQuery();
+    // delete the "Завершить" message after click
+    try { await ctx.deleteMessage(); } catch (e) { /* ignore */ }
     const userId = ctx.from?.id; if (!userId) return;
     try {
       if (db.setUserPosition) db.setUserPosition(userId, 1);
-      await ctx.reply('Спасибо! ожидайте окончания голосования, чтобы узнать результаты.');
+      const repeat = db.getSetting ? db.getSetting('repeat_votes_allowed') : '1';
+      if (repeat === '1') {
+        const kb = new InlineKeyboard().text('Да, пройти ещё раз', 'retake_yes').text('Нет', 'retake_no');
+        const m = await bot.api.sendMessage(userId, 'Вы можете пройти голосование заново, чтобы изменить выбор. Хотите пройти ещё раз?', { reply_markup: kb });
+        pushMsg(userId, m);
+      } else {
+        const m = await ctx.reply('Спасибо! ожидайте окончания голосования, чтобы узнать результаты.');
+        pushMsg(userId, m);
+      }
     } catch (e) {}
+  });
+
+  bot.callbackQuery('retake_no', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    try { await ctx.reply('Ок.'); } catch (e) {}
+  });
+
+  bot.callbackQuery('retake_yes', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const userId = ctx.from?.id; if (!userId) return;
+    try {
+      // delete all tracked bot messages in this chat
+      const list = userMessages[userId] || [];
+      for (const mid of list) {
+        try { await bot.api.deleteMessage(userId, mid); } catch (e) { /* ignore */ }
+      }
+      userMessages[userId] = [];
+      // reset position and send start message (like /start)
+      if (db.setUserPosition) db.setUserPosition(userId, 1);
+      // build start text similar to /start
+      const noms = db.selectAllNominations ? db.selectAllNominations() : [];
+      if (!noms || noms.length === 0) {
+        const m = await bot.api.sendMessage(userId, 'Привет! В системе пока нет номинаций. Обратитесь к администратору.');
+        pushMsg(userId, m);
+        return;
+      }
+      const accepting = db.getSetting ? db.getSetting('accepting_applications') : '1';
+      const repeatSetting = db.getSetting ? db.getSetting('repeat_votes_allowed') : '1';
+      const lines = noms.map((n: any) => `👑 ${n.title}${n.closed ? ' (закрыта)' : ''}`);
+      let text = `Привет! Голосование за номинации:\n\n${lines.join('\n\n')}`;
+      if (accepting !== '1') {
+        text += `\n\nПриём заявок временно закрыт. Голосование недоступно.`;
+        const m = await bot.api.sendMessage(userId, text);
+        pushMsg(userId, m);
+        return;
+      }
+      if (repeatSetting !== '1') {
+        text += `\n\nПовторное голосование запрещено администратором.`;
+        const m = await bot.api.sendMessage(userId, text);
+        pushMsg(userId, m);
+        return;
+      }
+      text += `\n\nНажми «Начать», чтобы пройти голосование.`;
+      const kb = new InlineKeyboard().text('Начать', 'begin');
+      const m = await bot.api.sendMessage(userId, text, { reply_markup: kb });
+      pushMsg(userId, m);
+    } catch (e) {
+      /* ignore */
+    }
   });
 
   // view nomination callback (from list) — open nomination for user
@@ -161,7 +235,7 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     if (!nom) return ctx.reply('Номинация не найдена.');
     const userId = ctx.from?.id; if (!userId) return;
     try {
-      await sendNominationToUser(bot, db, userId, nom);
+      await sendNominationToUser(bot, db, userId, nom, pushMsg);
     } catch (e) { /* ignore */ }
   });
 
@@ -196,16 +270,17 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
 
 }
 
-export async function sendNominationToUser(bot: Bot, db: any, userId: number, nom: any) {
+export async function sendNominationToUser(bot: Bot, db: any, userId: number, nom: any, pushMsg?: (uid: number, msg: any) => void) {
   try {
     const videos = (db.selectVideosByNomination && db.selectVideosByNomination(nom.id)) || [];
     const first = videos.slice(0, 4);
     // send up to 4 videos
     for (const v of first) {
       try {
-        await bot.api.sendVideo(userId, v.file_id, { caption: v.participant_nick || '' });
+        const m = await bot.api.sendVideo(userId, v.file_id, { caption: v.participant_nick || '' });
+        try { if (pushMsg) pushMsg(userId, m); } catch (e) {}
       } catch (e) {
-        try { await bot.api.sendMessage(userId, `${v.participant_nick || ''} — видео недоступно`); } catch (e) {}
+        try { const m = await bot.api.sendMessage(userId, `${v.participant_nick || ''} — видео недоступно`); if (pushMsg) pushMsg(userId, m); } catch (e) {}
       }
     }
     // check user's existing vote
@@ -216,12 +291,14 @@ export async function sendNominationToUser(bot: Bot, db: any, userId: number, no
       const selected = first.find((v: any) => Number(v.id) === Number(userVoteRow.video_id)) || (db.selectVideosByNomination ? db.selectVideosByNomination(nom.id).find((v: any) => Number(v.id) === Number(userVoteRow.video_id)) : null);
       const participant = selected ? (selected.participant_nick || `#${selected.id}`) : `#${userVoteRow.video_id}`;
       const text = `👑 ${nom.title}\n\nВы проголосовали за: ${participant}\n\nвы уже проголосовали, изменить выбор нельзя`;
-      await bot.api.sendMessage(userId, text);
+      const m = await bot.api.sendMessage(userId, text);
+      try { if (pushMsg) pushMsg(userId, m); } catch (e) {}
       return;
     }
 
     const kb = new InlineKeyboard();
     for (const v of first) kb.text(v.participant_nick || `#${v.id}`, `vote:${nom.id}:${v.id}`).row();
-    await bot.api.sendMessage(userId, `👑 ${nom.title}`, { reply_markup: kb });
+    const m = await bot.api.sendMessage(userId, `👑 ${nom.title}`, { reply_markup: kb });
+    try { if (pushMsg) pushMsg(userId, m); } catch (e) {}
   } catch (e) { /* ignore send errors */ }
 }
