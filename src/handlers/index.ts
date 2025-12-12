@@ -47,7 +47,10 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
 
   bot.on('message', async (ctx) => {
     const msg = ctx.message as any; const caption: string | undefined = msg?.caption;
-    const userId = ctx.from?.id;
+    const from = ctx.from;
+    const userId = from?.id;
+    // ignore all plain messages from non-admin users — управление только через кнопки
+    if (userId && !isAdmin(from)) return;
     if (userId) {
       const session = sessions.getSession(userId);
       if (session) {
@@ -184,46 +187,13 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
 
   bot.callbackQuery('retake_yes', async (ctx) => {
     await ctx.answerCallbackQuery();
+    // delete the retake prompt
+    try { await ctx.deleteMessage(); } catch (e) { /* ignore */ }
     const userId = ctx.from?.id; if (!userId) return;
     try {
-      // delete all tracked bot messages in this chat
-      const list = userMessages[userId] || [];
-      for (const mid of list) {
-        try { await bot.api.deleteMessage(userId, mid); } catch (e) { /* ignore */ }
-      }
-      userMessages[userId] = [];
-      // reset position and send start message (like /start)
-      if (db.setUserPosition) db.setUserPosition(userId, 1);
-      // build start text similar to /start
-      const noms = db.selectAllNominations ? db.selectAllNominations() : [];
-      if (!noms || noms.length === 0) {
-        const m = await bot.api.sendMessage(userId, 'Привет! В системе пока нет номинаций. Обратитесь к администратору.');
-        pushMsg(userId, m);
-        return;
-      }
-      const accepting = db.getSetting ? db.getSetting('accepting_applications') : '1';
-      const repeatSetting = db.getSetting ? db.getSetting('repeat_votes_allowed') : '1';
-      const lines = noms.map((n: any) => `👑 ${n.title}${n.closed ? ' (закрыта)' : ''}`);
-      let text = `Привет! Голосование за номинации:\n\n${lines.join('\n\n')}`;
-      if (accepting !== '1') {
-        text += `\n\nПриём заявок временно закрыт. Голосование недоступно.`;
-        const m = await bot.api.sendMessage(userId, text);
-        pushMsg(userId, m);
-        return;
-      }
-      if (repeatSetting !== '1') {
-        text += `\n\nПовторное голосование запрещено администратором.`;
-        const m = await bot.api.sendMessage(userId, text);
-        pushMsg(userId, m);
-        return;
-      }
-      text += `\n\nНажми «Начать», чтобы пройти голосование.`;
-      const kb = new InlineKeyboard().text('Начать', 'begin');
-      const m = await bot.api.sendMessage(userId, text, { reply_markup: kb });
-      pushMsg(userId, m);
-    } catch (e) {
-      /* ignore */
-    }
+      const m = await bot.api.sendMessage(userId, 'Спасибо! Ожидайте результатов.');
+      try { pushMsg(userId, m); } catch (e) { /* ignore */ }
+    } catch (e) { /* ignore */ }
   });
 
   // view nomination callback (from list) — open nomination for user
