@@ -17,7 +17,7 @@ export async function startBot(token: string, db: any) {
 
   const botCommands = [
     { command: 'start', description: 'Запустить бота' },
-    { command: 'whoami', description: 'Показать ваш numeric id' },
+    { command: 'me', description: 'Показать ваш numeric id' },
     { command: 'add_nomination', description: 'Добавить номинацию' },
     { command: 'show_next', description: 'Показать следующую номинацию (админ)' },
     { command: 'set_repeat_vote', description: 'Вкл/выкл повторные голоса (админ)' },

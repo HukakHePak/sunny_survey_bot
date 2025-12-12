@@ -1,9 +1,9 @@
 import { Bot, InlineKeyboard } from 'grammy';
 import * as nominationService from '../services/nominationService';
+import sessions from '../state/creationSessions';
 
 export function registerCommands(bot: Bot, db: any, isAdmin: (id?: number) => boolean) {
-  bot.command('start', async (ctx) => { await ctx.reply('Привет! Используйте /whoami или команды админа.'); });
-  
+  // start: show nominations and 'Начать'
   bot.command('start', async (ctx) => {
     // Send welcome with list of nominations and 'Начать' button
     try {
@@ -21,14 +21,13 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (id?: number) => bo
     }
   });
 
-  bot.command('whoami', async (ctx) => { const userId = ctx.from?.id; if (!userId) return ctx.reply('Не удалось определить ваш id.'); return ctx.reply(`Ваш Telegram ID: ${userId}`); });
+  bot.command('me', async (ctx) => { const userId = ctx.from?.id; if (!userId) return ctx.reply('Не удалось определить ваш id.'); return ctx.reply(`Ваш Telegram ID: ${userId}`); });
 
   bot.command('add_nomination', async (ctx) => {
     const fromId = ctx.from?.id; if (!isAdmin(fromId)) return ctx.reply('Нет прав.');
-    const parts = ctx.message?.text?.split(/\s+/) || []; const title = parts.slice(1).join(' ').trim();
-    if (!title) return ctx.reply('Использование: /add_nomination <title>');
-    const nom = nominationService.createNomination(db, title);
-    return ctx.reply(`Создана номинация: id=${nom.id} position=${nom.position}`);
+    const userId = ctx.from?.id; if (!userId) return ctx.reply('Не удалось определить ваш id.');
+    sessions.startAwaitingTitle(userId);
+    return ctx.reply('Отправьте название номинации (текст).');
   });
 
   let nextPosition = 1;
