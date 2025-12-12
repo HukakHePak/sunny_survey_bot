@@ -13,10 +13,17 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
         await ctx.reply('Привет! В системе пока нет номинаций. Обратитесь к администратору.');
         return;
       }
+      const accepting = db.getSetting ? db.getSetting('accepting_applications') : '1';
       const lines = noms.map((n: any) => `👑 ${n.title}${n.closed ? ' (закрыта)' : ''}`);
-      const text = `Привет!\n\n${lines.join('\n\n')}\n\nНажми «Начать», чтобы пройти голосование.`;
-      const kb = new InlineKeyboard().text('Начать', 'begin');
-      await ctx.reply(text, { reply_markup: kb });
+      let text = `Привет!\n\n${lines.join('\n\n')}`;
+      if (accepting === '1') {
+        text += `\n\nНажми «Начать», чтобы пройти голосование.`;
+        const kb = new InlineKeyboard().text('Начать', 'begin');
+        await ctx.reply(text, { reply_markup: kb });
+      } else {
+        text += `\n\nПриём заявок временно закрыт. Голосование недоступно.`;
+        await ctx.reply(text);
+      }
     } catch (e) {
       await ctx.reply('Ошибка получения списка номинаций.');
     }
@@ -63,7 +70,7 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     if (!noms || noms.length === 0) return ctx.reply('Номинаций нет.');
     const kb = new InlineKeyboard();
     for (const n of noms) {
-      kb.text(`👑 ${n.title}`, `view_nom:${n.id}`).row();
+      kb.text(`${n.title}`, `view_nom:${n.id}`).row();
     }
     return ctx.reply('Кликни номинацию, чтобы просмотреть её:', { reply_markup: kb });
   });
@@ -73,7 +80,17 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     const noms = nominationService.listNominations(db);
     if (!noms || noms.length === 0) return ctx.reply('Номинаций нет.');
     const kb = new InlineKeyboard();
-    for (const n of noms) kb.text(`👑 ${n.title}`, `delete_nom:${n.id}`).row();
+    for (const n of noms) kb.text(`${n.title}`, `delete_nom:${n.id}`).row();
     return ctx.reply('Выбери номинацию для удаления (будет запрос подтверждения):', { reply_markup: kb });
+  });
+
+  bot.command(CommandNames.Results, async (ctx) => {
+    const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
+    try {
+      const summary = nominationService.summaryResults(db);
+      await ctx.reply(`Результаты:\n\n${summary}`);
+    } catch (e) {
+      await ctx.reply('Ошибка при формировании результатов.');
+    }
   });
 }

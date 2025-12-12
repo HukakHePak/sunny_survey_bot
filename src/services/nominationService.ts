@@ -34,6 +34,27 @@ export function exportResults(db: any) {
   return lines.join('\n');
 }
 
+export function summaryResults(db: any) {
+  const noms = db.selectAllNominations ? db.selectAllNominations() : [];
+  if (!noms || noms.length === 0) return 'Результатов нет — номинаций нет.';
+  const parts: string[] = [];
+  for (const n of noms) {
+    parts.push(`${n.position}. ${n.title}`);
+    const vids = db.selectVideosByNomination ? db.selectVideosByNomination(n.id) : [];
+    const counts = db.selectVoteCountsForNomination ? db.selectVoteCountsForNomination(n.id) : [];
+    if (!vids || vids.length === 0) {
+      parts.push('  Нет участников.');
+    } else {
+      for (const v of vids) {
+        const cnt = (counts.find((c: any) => Number(c.video_id) === Number(v.id)) || { votes: 0 }).votes || 0;
+        parts.push(`  - ${v.participant_nick || `#${v.id}`}: ${cnt} голосов`);
+      }
+    }
+    parts.push('');
+  }
+  return parts.join('\n');
+}
+
 export function deleteNomination(db: any, id: number) {
   if (!id) throw new Error('invalid id');
   if (!db.deleteNomination) throw new Error('DB delete not available');

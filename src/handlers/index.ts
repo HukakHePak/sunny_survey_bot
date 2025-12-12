@@ -142,7 +142,7 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     const userId = ctx.from?.id; if (!userId) return;
     try {
       if (db.setUserPosition) db.setUserPosition(userId, 1);
-      await ctx.reply('Спасибо! Вы завершили голосование.');
+      await ctx.reply('Спасибо! ожидайте окончания голосования, чтобы узнать результаты.');
     } catch (e) {}
   });
 
@@ -204,7 +204,7 @@ export async function sendNominationToUser(bot: Bot, db: any, userId: number, no
       }
     }
     const kb = new InlineKeyboard();
-    for (const v of first) kb.text(v.participant_nick || `#${v.id}`, `vote:${nom.id}:${v.id}`).row();
+    for (const v of first) kb.text(`👑 ${v.participant_nick || `#${v.id}`}`, `vote:${nom.id}:${v.id}`).row();
     await bot.api.sendMessage(userId, 'Выбери участника:', { reply_markup: kb });
   } catch (e) { /* ignore send errors */ }
 }

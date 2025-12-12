@@ -10,7 +10,7 @@ export function recordVote(db: any, userId: number, nominationId: number, videoI
 
   const existing = db.selectExistingVote ? db.selectExistingVote(userId, nominationId) : null;
   if (existing && repeat !== '1') {
-    return { success: false, reason: 'Повторное голосование запрещено администратором.' };
+    return { success: false, reason: 'вы уже проголосовали, изменить выбор нельзя' };
   }
 
   if (db.deleteVotesByUserNomination) db.deleteVotesByUserNomination(userId, nominationId);
