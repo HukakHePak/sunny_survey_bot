@@ -6,6 +6,7 @@ export enum CommandNames {
   Results = 'results',
   RepeatVote = 'repeat_vote',
   Survey = 'survey',
+  Vipe = 'vipe',
   List = 'list',
   Remove = 'remove',
 }

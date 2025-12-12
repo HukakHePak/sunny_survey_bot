@@ -272,6 +272,31 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     try { await ctx.editMessageText('Удаление отменено.'); } catch (e) { try { await ctx.reply('Удаление отменено.'); } catch (e) {} }
   });
 
+  // vipe (wipe votes) confirmation handlers
+  bot.callbackQuery('vipe_cancel', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    try { await ctx.editMessageText('Операция отменена.'); } catch (e) { try { await ctx.reply('Операция отменена.'); } catch (e) {} }
+  });
+
+  bot.callbackQuery('vipe_confirm', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const from = ctx.from; if (!isAdmin(from)) return ctx.answerCallbackQuery({ text: 'Нет прав.' });
+    try {
+      // delete all votes
+      if (db.db) {
+        db.db.prepare('DELETE FROM votes').run();
+        try { db.db.prepare('VACUUM').run(); } catch (e) { /* ignore */ }
+        // reset user progress positions
+        try { db.db.prepare('UPDATE user_progress SET position = 1').run(); } catch (e) { /* ignore */ }
+      } else if (db.deleteAllVotes) {
+        try { db.deleteAllVotes(); } catch (e) { /* ignore */ }
+      }
+      try { await ctx.editMessageText('Результаты голосования очищены.'); } catch (e) { await ctx.reply('Результаты голосования очищены.'); }
+    } catch (e) {
+      try { await ctx.reply('Ошибка при очистке результатов.'); } catch (er) {}
+    }
+  });
+
 }
 
 export async function sendNominationToUser(bot: Bot, db: any, userId: number, nom: any, pushMsg?: (uid: number, msg: any) => void) {

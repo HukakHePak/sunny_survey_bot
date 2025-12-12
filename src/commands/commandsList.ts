@@ -6,6 +6,7 @@ export const fullCommands = [
   { command: CommandNames.List, description: 'Показать номинации' },
   { command: CommandNames.Remove, description: 'Удалить номинацию' },
   { command: CommandNames.Survey, description: 'Возобновить/остановить голосование' },
+  { command: CommandNames.Vipe, description: 'Очистить результаты голосования (admin)' },
   { command: CommandNames.RepeatVote, description: 'Разрешить/запретить повторное голосование' },
   { command: CommandNames.Results, description: 'Показать результаты' },
   { command: CommandNames.Stats, description: 'Статус бота' },

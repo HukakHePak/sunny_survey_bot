@@ -134,6 +134,14 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     }
   });
 
+  safeCommand(CommandNames.Vipe, async (ctx) => {
+    const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
+    const kb = new InlineKeyboard()
+      .text('Да, очистить результаты', 'vipe_confirm')
+      .text('Отмена', 'vipe_cancel');
+    return ctx.reply('Вы уверены, что хотите безвозвратно удалить все результаты голосования? Действие необратимо.', { reply_markup: kb });
+  });
+
   // list nominations (users can view; shows user's votes if any)
   safeCommand(CommandNames.List, async (ctx) => {
     const user = ctx.from; if (!user || !user.id) return ctx.reply('Не удалось определить ваш id.');
