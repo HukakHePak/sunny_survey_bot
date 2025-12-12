@@ -16,4 +16,3 @@ const db = initDb(dbPath);
 (async () => {
   await startBot(token, db);
 })();
-// trigger
