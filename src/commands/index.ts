@@ -30,16 +30,7 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     return ctx.reply('Отправьте название номинации (текст).');
   });
 
-  let nextPosition = 1;
-  bot.command('show_next', async (ctx) => {
-    const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
-    const nom = nominationService.getNominationByPosition(db, nextPosition); if (!nom) return ctx.reply('Новых номинаций нет.');
-    const videos = db.selectVideosByNomination(nom.id); if (!videos || videos.length === 0) return ctx.reply('У этой номинации нет видео.');
-    await ctx.reply(`Номинация: ${nom.title}`);
-    for (const v of videos) { try { await ctx.replyWithVideo(v.file_id, { caption: v.participant_nick || '' }); } catch (e) { /* ignore */ } }
-    const kb = new InlineKeyboard(); for (const v of videos) kb.text(v.participant_nick || `#${v.id}`, `vote:${nom.id}:${v.id}`);
-    await ctx.reply('Выбери участника:', { reply_markup: kb }); nextPosition += 1;
-  });
+  // /show_next removed — admin flow replaced by other controls
 
   bot.command('export_results', async (ctx) => {
     const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
@@ -72,7 +63,7 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     }
   });
 
-  bot.command('set_repeat_vote', async (ctx) => {
+  bot.command('switch_repeat_vote', async (ctx) => {
     const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
     const cur = db.getSetting ? db.getSetting('repeat_votes_allowed') : '0';
     const next = cur === '1' ? '0' : '1';
@@ -80,7 +71,7 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     return ctx.reply(`Повторное голосование теперь ${next === '1' ? 'разрешено' : 'запрещено'}`);
   });
 
-  bot.command('close_nomination', async (ctx) => {
+  bot.command('switch_survey', async (ctx) => {
     const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
     // toggle global 'accepting applications' setting. When off, voting disabled for all nominations.
     const cur = db.getSetting ? db.getSetting('accepting_applications') : '1';
