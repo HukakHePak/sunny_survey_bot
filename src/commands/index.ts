@@ -2,6 +2,7 @@ import { Bot, InlineKeyboard } from 'grammy';
 import * as nominationService from '../services/nominationService';
 import sessions from '../state/creationSessions';
 import CommandNames from './commandNames';
+import { fullCommands } from './commandsList';
 
 export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: number; username?: string } | number | string) => boolean) {
   // start: show nominations and 'Начать'
@@ -100,19 +101,10 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
 
   safeCommand(CommandNames.Update, async (ctx) => {
     const from = ctx.from; if (!from || !from.id) return ctx.reply('Не удалось определить ваш id.');
-    const isDev = process.env.NODE_ENV === 'development' || process.env.DISABLE_TELEGRAM === 'true';
+    const isDev = process.env.DISABLE_TELEGRAM === 'true';
     if (!isDev && !isAdmin(from)) return ctx.reply('Нет прав.');
     const userId = Number(from.id);
-    const cmds = [
-      { command: CommandNames.Start, description: 'Запустить бота' },
-      { command: CommandNames.Add, description: 'Добавить номинацию' },
-      { command: CommandNames.List, description: 'Показать номинации' },
-      { command: CommandNames.Remove, description: 'Удалить номинацию' },
-      { command: CommandNames.Survey, description: 'Возобновить/остановить голосование' },
-      { command: CommandNames.RepeatVote, description: 'Разрешить/запретить повторное голосование' },
-      { command: CommandNames.Results, description: 'Показать результаты' },
-      { command: CommandNames.Stats, description: 'Статус бота' },
-    ];
+    const cmds = fullCommands;
     try {
       // In dev: if caller is NOT admin, clear commands for their chat (hide menu).
       if (isDev && !isAdmin(from)) {

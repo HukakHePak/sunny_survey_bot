@@ -2,6 +2,7 @@ import { Bot } from 'grammy';
 import { registerCommands } from './commands';
 import { registerHandlers } from './handlers';
 import CommandNames from './commands/commandNames';
+import { fullCommands, minimalCommands } from './commands/commandsList';
 
 export async function startBot(token: string, db: any) {
   const bot = new Bot(token);
@@ -32,37 +33,22 @@ export async function startBot(token: string, db: any) {
   registerCommands(bot, db, isAdmin);
   registerHandlers(bot, db, isAdmin);
 
-  const botCommands = [
-    { command: CommandNames.Start, description: 'Запустить бота' },
-    { command: CommandNames.Add, description: 'Добавить номинацию' },
-    { command: CommandNames.List, description: 'Показать номинации' },
-    { command: CommandNames.Remove, description: 'Удалить номинацию' },
-    { command: CommandNames.Survey, description: 'Возобновить/остановить голосование' },
-    { command: CommandNames.RepeatVote, description: 'Разрешить/запретить повторное голосование' },
-    { command: CommandNames.Results, description: 'Показать результаты' },
-    { command: CommandNames.Stats, description: 'Статус бота' },
-  ];
+  const botCommands = fullCommands;
 
   if (process.env.DISABLE_TELEGRAM === 'true') {
     console.log('DISABLE_TELEGRAM=true — пропускаю инициализацию grammy');
     setInterval(() => {}, 1 << 30);
   } else {
-    // remove commands globally and for all chats so only admin chat(s) get commands
+    // set minimal commands for regular users (default/all scopes)
     try {
-      await bot.api.setMyCommands([], { scope: { type: 'default' } as any });
-    } catch (e) {
-      // ignore failures to clear default commands
-    }
+      await bot.api.setMyCommands(minimalCommands as any, { scope: { type: 'default' } as any });
+    } catch (e) { }
     try {
-      await bot.api.setMyCommands([], { scope: { type: 'all_private_chats' } as any });
-    } catch (e) {
-      // ignore
-    }
+      await bot.api.setMyCommands(minimalCommands as any, { scope: { type: 'all_private_chats' } as any });
+    } catch (e) { }
     try {
-      await bot.api.setMyCommands([], { scope: { type: 'all_group_chats' } as any });
-    } catch (e) {
-      // ignore
-    }
+      await bot.api.setMyCommands(minimalCommands as any, { scope: { type: 'all_group_chats' } as any });
+    } catch (e) { }
 
     // set commands only for admin chats (if configured)
     if (ADMIN_IDS && ADMIN_IDS.length > 0) {
