@@ -1,4 +1,4 @@
-import { Bot, InlineKeyboard } from 'grammy';
+import { Bot, InlineKeyboard, Keyboard } from 'grammy';
 import * as votingService from '../services/votingService';
 import * as nominationService from '../services/nominationService';
 import * as userService from '../services/userService';
@@ -56,16 +56,23 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     if (userId) {
       const session = sessions.getSession(userId);
       if (session) {
-        if (session.state === 'awaiting_title') {
-          if (msg.text && !msg.text.startsWith('/')) {
-            const title = msg.text.trim();
-            // do not create nomination yet — wait for at least one video
-            sessions.startCollectingPending(userId, title);
-            const kb = new InlineKeyboard().text('Отмена', 'add_cancel');
-            await ctx.reply(`Название получено: "${title}". Теперь отправьте первое видео с подписью (ник участника). Номинация будет создана только после добавления видео.`, { reply_markup: kb });
-          } else {
-            await ctx.reply('Ожидаю название номинации (текст).');
-          }
+            if (session.state === 'awaiting_title') {
+              if (msg.text && !msg.text.startsWith('/')) {
+                const text = msg.text.trim();
+                // handle cancel
+                if (text === 'Отмена') {
+                  sessions.endSession(userId);
+                  await ctx.reply('Добавление отменено.', { reply_markup: { remove_keyboard: true } });
+                  return;
+                }
+                const title = text;
+                // do not create nomination yet — wait for at least one video
+                sessions.startCollectingPending(userId, title);
+                const kb = new Keyboard().text('Отмена');
+                await ctx.reply(`Название получено: "${title}". Теперь отправьте первое видео с подписью (ник участника). Номинация будет создана только после добавления видео.`, { reply_markup: kb });
+              } else {
+                await ctx.reply('Ожидаю название номинации (текст).');
+              }
           return;
         }
 
@@ -82,18 +89,36 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
               try {
                 const vids = db.selectVideosByNomination ? db.selectVideosByNomination(session.nominationId) : [];
                 if (vids && vids.length >= 2) {
-                  const mid = adminControlsMsg[userId];
-                  if (mid) {
-                    try { await bot.api.deleteMessage(userId, mid); } catch (e) {}
-                    delete adminControlsMsg[userId];
-                  }
+                  // remove control keyboard
+                  await ctx.reply('Достигнуто минимальное количество видео. Управляющие кнопки убраны.', { reply_markup: { remove_keyboard: true } });
                 }
               } catch (e) { /* ignore */ }
             }
             return;
           }
-          // any non-video message no longer auto-ends collection; instruct admin to use buttons
-          await ctx.reply('Используйте кнопку "Сохранить" для завершения или "Отмена" для отмены добавления номинации.');
+          // handle text controls while collecting
+          if (msg.text && !msg.text.startsWith('/')) {
+            const t = msg.text.trim();
+            if (t === 'Отмена') {
+              const nomId = (session as any).nominationId;
+              try { nominationService.deleteNomination(db, nomId); } catch (e) {}
+              sessions.endSession(userId);
+              await ctx.reply('Добавление отменено. Номинация не создана.', { reply_markup: { remove_keyboard: true } });
+              return;
+            }
+            if (t === 'Сохранить') {
+              const nomId = (session as any).nominationId;
+              const vids = db.selectVideosByNomination ? db.selectVideosByNomination(nomId) : [];
+              if (!vids || vids.length < 2) {
+                await ctx.reply('Нельзя сохранить — для номинации требуется минимум 2 видео.');
+                return;
+              }
+              sessions.endSession(userId);
+              await ctx.reply('Номинация сохранена.', { reply_markup: { remove_keyboard: true } });
+              return;
+            }
+          }
+          await ctx.reply('Используйте кнопки в интерфейсе: "Сохранить" или "Отмена".');
           return;
         }
 
@@ -112,18 +137,23 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
               const nom = nominationService.createNomination(db, title);
               nominationService.addVideoToNomination(db, nom.id, fileId, nick);
               sessions.startCollecting(userId, nom.id);
-              // send control buttons (Save / Cancel)
-              const kb = new InlineKeyboard().text('Сохранить', 'add_save').text('Отмена', 'add_cancel');
-              const m = await ctx.reply(`Номинация "${title}" создана и первое видео участника "${nick}" добавлено. Добавляйте следующие видео или сохраните номинацию.`, { reply_markup: kb });
-              try { adminControlsMsg[userId] = (m as any).message_id; } catch (e) {}
+              // send control keyboard (Сохранить / Отмена)
+              const kb = new Keyboard().text('Сохранить').text('Отмена');
+              await ctx.reply(`Номинация "${title}" создана и первое видео участника "${nick}" добавлено. Добавляйте следующие видео или сохраните номинацию.`, { reply_markup: kb });
             } catch (e) {
               await ctx.reply('Ошибка при создании номинации.');
             }
             return;
           }
-          // non-video -> cancel pending nomination
-          sessions.endSession(userId);
-          await ctx.reply('Добавление отменено. Номинация не создана.');
+          // handle explicit cancel text while pending
+          if (msg.text && !msg.text.startsWith('/')) {
+            const t = msg.text.trim();
+            if (t === 'Отмена') {
+              sessions.endSession(userId);
+              await ctx.reply('Добавление отменено. Номинация не создана.', { reply_markup: { remove_keyboard: true } });
+              return;
+            }
+          }
           return;
         }
       }

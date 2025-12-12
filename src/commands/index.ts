@@ -1,4 +1,4 @@
-import { Bot, InlineKeyboard } from 'grammy';
+import { Bot, InlineKeyboard, Keyboard } from 'grammy';
 import * as nominationService from '../services/nominationService';
 import sessions from '../state/creationSessions';
 import CommandNames from './commandNames';
@@ -62,7 +62,7 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
     const userId = from?.id; if (!userId) return ctx.reply('Не удалось определить ваш id.');
     sessions.startAwaitingTitle(userId);
-    const kb = new InlineKeyboard().text('Отмена', 'add_cancel');
+    const kb = new Keyboard().text('Отмена');
     return ctx.reply('Отправьте название номинации (текст).', { reply_markup: kb });
   });
 
@@ -145,7 +145,9 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
 
   // list nominations (users can view; shows user's votes if any)
   safeCommand(CommandNames.List, async (ctx) => {
-    const user = ctx.from; if (!user || !user.id) return ctx.reply('Не удалось определить ваш id.');
+    const from = ctx.from; if (!from) return ctx.reply('Не удалось определить ваш id.');
+    if (!isAdmin(from)) return ctx.reply('Нет прав.');
+    const user = from;
     const userId = user.id;
     const noms = nominationService.listNominations(db);
     if (!noms || noms.length === 0) return ctx.reply('Номинаций нет.');
