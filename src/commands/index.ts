@@ -30,12 +30,28 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
         await ctx.reply(text);
         return;
       }
-      if (repeat !== '1') {
-        text += `\n\nПовторное голосование запрещено администратором.`;
-        await ctx.reply(text);
-        return;
+
+      // If repeat voting is disabled, and the user has already completed voting,
+      // don't show the "Начать" button — inform them that they've already voted.
+      const from = ctx.from;
+      const userId = from?.id;
+      if (repeat !== '1' && userId) {
+        let allVoted = true;
+        for (const n of noms) {
+          const voteRow = db.selectUserVote ? db.selectUserVote(userId, n.id) : null;
+          if (!voteRow || !voteRow.video_id) {
+            allVoted = false;
+            break;
+          }
+        }
+        if (allVoted) {
+          text += `\n\nВы уже проголосовали. Повторное голосование отключено.`;
+          await ctx.reply(text);
+          return;
+        }
       }
-      // accepting === '1' && repeat === '1'
+
+      // Either repeat voting is allowed, or the user hasn't voted yet — show the button.
       text += `\n\nНажми «Начать», чтобы пройти голосование.`;
       const kb = new InlineKeyboard().text('Начать', 'begin');
       await ctx.reply(text, { reply_markup: kb });
