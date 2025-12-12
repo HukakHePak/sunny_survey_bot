@@ -85,14 +85,19 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
     const noms = nominationService.listNominations(db);
     if (!noms || noms.length === 0) return ctx.reply('Номинаций нет.');
-    const lines = noms.map((n: any) => `${n.id}. ${n.position}. ${n.title}${n.closed ? ' (закр.)' : ''}`);
-    return ctx.reply(`Список номинаций:\n${lines.join('\n')}`);
+    const kb = new InlineKeyboard();
+    for (const n of noms) {
+      kb.text(`${n.position}. ${n.title}`, `view_nom:${n.id}`);
+    }
+    return ctx.reply('Кликните номинацию, чтобы просмотреть её:', { reply_markup: kb });
   });
 
   bot.command('delete_nomination', async (ctx) => {
     const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
-    const parts = ctx.message?.text?.split(/\s+/) || []; if (parts.length < 2) return ctx.reply('Использование: /delete_nomination <nomination_id>');
-    const id = Number(parts[1]); if (!id) return ctx.reply('Неверный id');
-    try { nominationService.deleteNomination(db, id); return ctx.reply(`Номинация ${id} удалена.`); } catch (e) { return ctx.reply('Ошибка удаления номинации.'); }
+    const noms = nominationService.listNominations(db);
+    if (!noms || noms.length === 0) return ctx.reply('Номинаций нет.');
+    const kb = new InlineKeyboard();
+    for (const n of noms) kb.text(`${n.position}. ${n.title}`, `delete_nom:${n.id}`);
+    return ctx.reply('Выберите номинацию для удаления (будет запрос подтверждения):', { reply_markup: kb });
   });
 }

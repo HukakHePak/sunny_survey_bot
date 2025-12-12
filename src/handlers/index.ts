@@ -113,6 +113,48 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     } catch (e) {}
   });
 
+  // view nomination callback (from list) — open nomination for user
+  bot.callbackQuery(/^view_nom:/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const parts = (ctx.callbackQuery.data || '').split(':'); if (parts.length !== 2) return;
+    const id = Number(parts[1]); if (!id) return;
+    const nom = db.selectNominationById ? db.selectNominationById(id) : null;
+    if (!nom) return ctx.reply('Номинация не найдена.');
+    const userId = ctx.from?.id; if (!userId) return;
+    try {
+      await sendNominationToUser(bot, db, userId, nom);
+    } catch (e) { /* ignore */ }
+  });
+
+  // delete nomination flow: admin clicks delete -> confirmation -> confirm_delete
+  bot.callbackQuery(/^delete_nom:/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const from = ctx.from; if (!isAdmin(from)) return ctx.answerCallbackQuery({ text: 'Нет прав.' });
+    const parts = (ctx.callbackQuery.data || '').split(':'); if (parts.length !== 2) return;
+    const id = Number(parts[1]); if (!id) return;
+    const kb = new InlineKeyboard().text('Удалить', `confirm_delete:${id}`).text('Отмена', `cancel_delete:${id}`);
+    try { await ctx.reply(`Подтвердите удаление номинации ${id}:`, { reply_markup: kb }); } catch (e) { }
+  });
+
+  bot.callbackQuery(/^confirm_delete:/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const from = ctx.from; if (!isAdmin(from)) return ctx.answerCallbackQuery({ text: 'Нет прав.' });
+    const parts = (ctx.callbackQuery.data || '').split(':'); if (parts.length !== 2) return;
+    const id = Number(parts[1]); if (!id) return;
+    try {
+      nominationService.deleteNomination(db, id);
+      try { await ctx.editMessageText(`Номинация ${id} была удалена.`); } catch (e) { await ctx.reply(`Номинация ${id} была удалена.`); }
+    } catch (e) {
+      try { await ctx.reply('Ошибка при удалении номинации.'); } catch (e) {}
+    }
+  });
+
+  bot.callbackQuery(/^cancel_delete:/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const parts = (ctx.callbackQuery.data || '').split(':');
+    try { await ctx.editMessageText('Удаление отменено.'); } catch (e) { try { await ctx.reply('Удаление отменено.'); } catch (e) {} }
+  });
+
 }
 
 export async function sendNominationToUser(bot: Bot, db: any, userId: number, nom: any) {
