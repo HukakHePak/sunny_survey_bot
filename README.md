@@ -50,3 +50,21 @@ docker compose -f docker-compose.yml up -d
 Хранение данных
 
 - Папка `./data` монтируется в контейнер и содержит SQLite БД.
+ 
+Pruning local video storage
+
+- Проект сохраняет загруженные видео в `./data/videos` чтобы не зависеть от долговечности `file_id` у Telegram.
+- Запустить ручную ротацию:
+
+```bash
+node scripts/prune_videos.js
+```
+
+- Настройки через `.env`:
+	- `VIDEO_STORE_DIR` — директория (по умолчанию `./data/videos`).
+	- `VIDEO_STORE_MAX_FILES` — макс. количество файлов (по умолчанию `1000`).
+	- `VIDEO_STORE_MAX_BYTES` — макс. общий размер (по умолчанию `5000000000`).
+
+- Автоматическая ротация: в `docker-compose.yml` добавлен сервис `pruner`, который выполняет `prune_videos.js` в цикле (по умолчанию раз в 86400s). Интервал можно переопределить через `PRUNE_INTERVAL_SECONDS`.
+
+- Чтобы при очистке голосов удалялись локальные файлы, установите `DELETE_VIDEO_FILES_ON_VOTE_CLEAR=1` перед запуском `node scripts/clear_votes.js`.

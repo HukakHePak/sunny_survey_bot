@@ -10,6 +10,20 @@ services:
     networks:
       - tglinet
 
+  pruner:
+    image: node:20-slim
+    working_dir: /app
+    env_file:
+      - .env
+    volumes:
+      - ./:/app:ro
+      - ./data:/data
+    networks:
+      - tglinet
+    # Run prune script once per day (86400s). Adjust interval with PRUNE_INTERVAL_SECONDS env var.
+    command: sh -c "while true; do node scripts/prune_videos.js || true; sleep ${PRUNE_INTERVAL_SECONDS:-86400}; done"
+    restart: unless-stopped
+
 networks:
   tglinet:
     driver: bridge
