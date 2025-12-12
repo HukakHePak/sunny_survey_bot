@@ -11,8 +11,12 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (id?: number) => bo
     try {
       // set user to first nomination
       if (db.setUserPosition) db.setUserPosition(userId, 1);
-      const nom = db.selectNominationByPosition ? db.selectNominationByPosition(1) : null;
+      // find first non-closed nomination
+      let pos = 1;
+      let nom = db.selectNominationByPosition ? db.selectNominationByPosition(pos) : null;
+      while (nom && nom.closed) { pos += 1; nom = db.selectNominationByPosition ? db.selectNominationByPosition(pos) : null; }
       if (!nom) return ctx.reply('Нет номинаций для начала.');
+      if (db.setUserPosition) db.setUserPosition(userId, pos);
       await sendNominationToUser(bot, db, userId, nom);
     } catch (e) {
       // ignore
@@ -44,8 +48,30 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (id?: number) => bo
     const text = 'Ваш голос учтён.\n' + videos.map((v: any) => `${v.participant_nick || `#${v.id}`}: ${countsMap[v.id] || 0}`).join('\n');
     try { await ctx.editMessageText(text, { reply_markup: kb }); } catch (e) { await ctx.reply(text); }
 
-    const nextPos = userService.advanceUserPosition(db, userId); const nextNom = nominationService.getNominationByPosition(db, nextPos);
-    if (nextNom) { try { await sendNominationToUser(bot, db, userId, nextNom); } catch (e) {} }
+    // advance and skip closed nominations
+    let nextPos = userService.advanceUserPosition(db, userId);
+    let nextNom = nominationService.getNominationByPosition(db, nextPos);
+    while (nextNom && nextNom.closed) {
+      nextPos = userService.advanceUserPosition(db, userId);
+      nextNom = nominationService.getNominationByPosition(db, nextPos);
+    }
+    if (nextNom) {
+      try { await sendNominationToUser(bot, db, userId, nextNom); } catch (e) {}
+    } else {
+      // no more nominations -> completion
+      const kb = new InlineKeyboard().text('Завершить', 'finish');
+      try { await bot.api.sendMessage(userId, 'Вы проголосовали по всем номинациям. Нажмите Завершить.', { reply_markup: kb }); } catch (e) {}
+    }
+  });
+
+  // finish callback: acknowledge and reset progress
+  bot.callbackQuery('finish', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const userId = ctx.from?.id; if (!userId) return;
+    try {
+      if (db.setUserPosition) db.setUserPosition(userId, 1);
+      await ctx.reply('Спасибо! Вы завершили голосование.');
+    } catch (e) {}
   });
 
 }
