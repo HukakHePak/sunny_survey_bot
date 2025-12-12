@@ -26,20 +26,27 @@ function isAdmin(userId?: number) {
 // Keep track of which nomination position to show next (in-memory)
 let nextPosition = 1;
 
+const LABEL_WHOAMI = 'Мой ID';
+const LABEL_ADD_NOM = 'Добавить номинацию';
+const LABEL_SHOW_NEXT = 'Показать следующую';
+const LABEL_TOGGLE_REPEAT = 'Вкл/Выкл повторы';
+const LABEL_CLOSE_NOM = 'Закрыть номинацию (инструкция)';
+const LABEL_EXPORT = 'Экспорт результатов';
+
 bot.command('start', async (ctx) => {
   const fromId = ctx.from?.id;
   const isAdm = isAdmin(fromId);
   const kb = new Keyboard();
-  kb.text('/whoami');
+  kb.text(LABEL_WHOAMI);
   kb.row();
-  kb.text('/add_nomination');
-  kb.text('/show_next');
+  kb.text(LABEL_ADD_NOM);
+  kb.text(LABEL_SHOW_NEXT);
   if (isAdm) {
     kb.row();
-    kb.text('/set_repeat_vote');
-    kb.text('/close_nomination');
+    kb.text(LABEL_TOGGLE_REPEAT);
+    kb.text(LABEL_CLOSE_NOM);
     kb.row();
-    kb.text('/export_results');
+    kb.text(LABEL_EXPORT);
   }
   await ctx.reply('Привет! Номинации: используйте кнопки меню или команды.', { reply_markup: kb });
 });
@@ -111,7 +118,85 @@ async function sendNominationToUser(userId: number, nom: any) {
 // Accept video messages with caption: /add_video <nomination_id> <nick>
 bot.on('message', async (ctx) => {
   const msg = ctx.message as any;
+  const text: string | undefined = msg?.text;
   const caption: string | undefined = msg?.caption;
+
+  // Handle reply-keyboard labels
+  if (text) {
+    const fromId = ctx.from?.id;
+    // Мой ID
+    if (text === LABEL_WHOAMI) {
+      const userId = ctx.from?.id;
+      if (!userId) return ctx.reply('Не удалось определить ваш id.');
+      return ctx.reply(`Ваш Telegram ID: ${userId}`);
+    }
+
+    // Добавить номинацию — подсказка
+    if (text === LABEL_ADD_NOM) {
+      const fromId = ctx.from?.id;
+      if (!isAdmin(fromId)) return ctx.reply('Нет прав.');
+      return ctx.reply('Использование: /add_nomination <название номинации>');
+    }
+
+    // Показать следующую (админ)
+    if (text === LABEL_SHOW_NEXT) {
+      const fromId = ctx.from?.id;
+      if (!isAdmin(fromId)) return ctx.reply('Нет прав.');
+      const nom = db.getNominationByPosition(nextPosition);
+      if (!nom) return ctx.reply('Новых номинаций нет.');
+      const videos = db.getVideosByNomination(nom.id);
+      if (!videos || videos.length === 0) return ctx.reply('У этой номинации нет привязанных видео.');
+
+      await ctx.reply(`Номинация: ${nom.title}`);
+      for (const v of videos) {
+        try {
+          await ctx.replyWithVideo(v.file_id, { caption: v.participant_nick || '' });
+        } catch (e) {
+          await ctx.reply(`Не удалось отправить видео id=${v.id}`);
+        }
+      }
+
+      const kb = new InlineKeyboard();
+      for (const v of videos) {
+        kb.text(v.participant_nick || `#${v.id}`, `vote:${nom.id}:${v.id}`);
+      }
+      await ctx.reply('Выбери участника:', { reply_markup: kb });
+      nextPosition += 1;
+      return;
+    }
+
+    // Toggle repeat votes
+    if (text === LABEL_TOGGLE_REPEAT) {
+      const fromId = ctx.from?.id;
+      if (!isAdmin(fromId)) return ctx.reply('Нет прав.');
+      const cur = db.getSetting('repeat_votes_allowed');
+      const next = cur === '1' ? '0' : '1';
+      db.setSetting('repeat_votes_allowed', next);
+      return ctx.reply(`Повторное голосование теперь ${next === '1' ? 'разрешено' : 'запрещено'}`);
+    }
+
+    // Close nomination instruction
+    if (text === LABEL_CLOSE_NOM) {
+      const fromId = ctx.from?.id;
+      if (!isAdmin(fromId)) return ctx.reply('Нет прав.');
+      return ctx.reply('Использование: /close_nomination <id> — чтобы закрыть конкретную номинацию');
+    }
+
+    // Export results
+    if (text === LABEL_EXPORT) {
+      const fromId = ctx.from?.id;
+      if (!isAdmin(fromId)) return ctx.reply('Нет прав.');
+      const csv = db.exportResultsCSV();
+      const fn = `/data/results_${Date.now()}.csv`;
+      try {
+        fs.writeFileSync(fn, csv, 'utf8');
+        await ctx.replyWithDocument({ source: fs.createReadStream(fn) } as any);
+      } catch (e) {
+        await ctx.reply('Ошибка при создании файла результатов.');
+      }
+      return;
+    }
+  }
   if (caption && caption.startsWith('/add_video')) {
     const parts = caption.split(/\s+/);
     if (parts.length < 3) return ctx.reply('Использование в подписи видео: /add_video <nomination_id> <participant_nick>');
