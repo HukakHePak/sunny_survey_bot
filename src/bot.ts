@@ -46,6 +46,14 @@ export async function startBot(token: string, db: any) {
     console.log('DISABLE_TELEGRAM=true — пропускаю инициализацию grammy');
     setInterval(() => {}, 1 << 30);
   } else {
+    // remove global commands for regular users
+    try {
+      await bot.api.setMyCommands([], { scope: { type: 'default' } as any });
+    } catch (e) {
+      // ignore failures to clear global commands
+    }
+
+    // set commands only for admin chats (if configured)
     if (ADMIN_IDS && ADMIN_IDS.length > 0) {
       for (const aid of ADMIN_IDS) {
         const idNum = Number(aid);
