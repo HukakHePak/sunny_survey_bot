@@ -3,6 +3,9 @@ services:
     build: .
     env_file:
       - .env
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - CHOKIDAR_INTERVAL=100
     command: npm run dev
     volumes:
       - ./:/app:delegated
