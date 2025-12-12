@@ -198,7 +198,6 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
 
 export async function sendNominationToUser(bot: Bot, db: any, userId: number, nom: any) {
   try {
-    await bot.api.sendMessage(userId, `Номинация: ${nom.title}`);
     const videos = (db.selectVideosByNomination && db.selectVideosByNomination(nom.id)) || [];
     const first = videos.slice(0, 4);
     // send up to 4 videos
@@ -209,8 +208,20 @@ export async function sendNominationToUser(bot: Bot, db: any, userId: number, no
         try { await bot.api.sendMessage(userId, `${v.participant_nick || ''} — видео недоступно`); } catch (e) {}
       }
     }
+    // check user's existing vote
+    const userVoteRow = db.selectUserVote ? db.selectUserVote(userId, nom.id) : null;
+    const repeat = db.getSetting ? db.getSetting('repeat_votes_allowed') : '1';
+    if (userVoteRow && userVoteRow.video_id && repeat !== '1') {
+      // find participant nick
+      const selected = first.find((v: any) => Number(v.id) === Number(userVoteRow.video_id)) || (db.selectVideosByNomination ? db.selectVideosByNomination(nom.id).find((v: any) => Number(v.id) === Number(userVoteRow.video_id)) : null);
+      const participant = selected ? (selected.participant_nick || `#${selected.id}`) : `#${userVoteRow.video_id}`;
+      const text = `👑 ${nom.title}\n\nВы проголосовали за: ${participant}\n\nвы уже проголосовали, изменить выбор нельзя`;
+      await bot.api.sendMessage(userId, text);
+      return;
+    }
+
     const kb = new InlineKeyboard();
-    for (const v of first) kb.text(`👑 ${v.participant_nick || `#${v.id}`}`, `vote:${nom.id}:${v.id}`).row();
-    await bot.api.sendMessage(userId, 'Выбери участника:', { reply_markup: kb });
+    for (const v of first) kb.text(v.participant_nick || `#${v.id}`, `vote:${nom.id}:${v.id}`).row();
+    await bot.api.sendMessage(userId, `👑 ${nom.title}`, { reply_markup: kb });
   } catch (e) { /* ignore send errors */ }
 }

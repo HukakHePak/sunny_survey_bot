@@ -140,7 +140,11 @@ export function initDb(dbPath: string) {
 
   // Vote primitives
   function selectExistingVote(userId: number, nominationId: number) {
-    return db.prepare('SELECT id FROM votes WHERE user_id = ? AND nomination_id = ?').get(userId, nominationId);
+    return db.prepare('SELECT id, video_id FROM votes WHERE user_id = ? AND nomination_id = ?').get(userId, nominationId);
+  }
+
+  function selectUserVote(userId: number, nominationId: number) {
+    return db.prepare('SELECT video_id FROM votes WHERE user_id = ? AND nomination_id = ?').get(userId, nominationId);
   }
 
   function deleteVotesByUserNomination(userId: number, nominationId: number) {
@@ -192,6 +196,7 @@ export function initDb(dbPath: string) {
     selectIsNominationClosed,
     updateCloseNomination,
     deleteNomination,
+    selectUserVote,
     getUserPosition,
     setUserPosition,
     selectAllNominations,

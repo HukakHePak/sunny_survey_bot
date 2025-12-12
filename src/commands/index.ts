@@ -45,14 +45,6 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
 
   // /show_next removed — admin flow replaced by other controls
 
-  bot.command(CommandNames.Results, async (ctx) => {
-    const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
-    const csv = nominationService.exportResults(db); const fn = `/data/results_${Date.now()}.csv`;
-    try { (await import('fs')).default.writeFileSync(fn, csv, 'utf8'); await ctx.replyWithDocument({ source: (await import('fs')).default.createReadStream(fn) } as any); } catch (e) { await ctx.reply('Ошибка при создании файла результатов.'); }
-  });
-
-  // /seed removed
-
   bot.command(CommandNames.RepeatVote, async (ctx) => {
     const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
     const cur = db.getSetting ? db.getSetting('repeat_votes_allowed') : '0';
@@ -70,15 +62,27 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     return ctx.reply(`Приём заявок теперь ${next === '1' ? 'включён' : 'закрыт'}. Голосование ${next === '1' ? 'разрешено' : 'заблокировано'}.`);
   });
 
-  // list nominations for admin (to choose id to delete)
+  // list nominations (users can view; shows user's votes if any)
   bot.command(CommandNames.List, async (ctx) => {
-    const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
+    const user = ctx.from; if (!user || !user.id) return ctx.reply('Не удалось определить ваш id.');
+    const userId = user.id;
     const noms = nominationService.listNominations(db);
     if (!noms || noms.length === 0) return ctx.reply('Номинаций нет.');
-    const kb = new InlineKeyboard();
+    const lines: string[] = [];
     for (const n of noms) {
-      kb.text(`${n.title}`, `view_nom:${n.id}`).row();
+      const voteRow = db.selectUserVote ? db.selectUserVote(userId, n.id) : null;
+      let line = `${n.title}`;
+      if (voteRow && voteRow.video_id) {
+        const vids = db.selectVideosByNomination ? db.selectVideosByNomination(n.id) : [];
+        const vid = vids.find((v: any) => Number(v.id) === Number(voteRow.video_id));
+        const nick = vid ? (vid.participant_nick || `#${vid.id}`) : `#${voteRow.video_id}`;
+        line += ` — Вы проголосовали за: ${nick}`;
+      }
+      lines.push(line);
     }
+    const kb = new InlineKeyboard();
+    for (const n of noms) kb.text(`${n.title}`, `view_nom:${n.id}`).row();
+    await ctx.reply(lines.join('\n\n'));
     return ctx.reply('Кликни номинацию, чтобы просмотреть её:', { reply_markup: kb });
   });
 
