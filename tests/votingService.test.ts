@@ -7,9 +7,9 @@ describe('votingService', () => {
   });
 
   test('recordVote delegates to db', () => {
-    const mockDb: any = { recordVote: jest.fn().mockReturnValue({ success: true }) };
+    const mockDb: any = { selectIsNominationClosed: jest.fn().mockReturnValue(false), getSetting: jest.fn().mockReturnValue('1'), selectExistingVote: jest.fn().mockReturnValue(null), deleteVotesByUserNomination: jest.fn(), insertVote: jest.fn() };
     const res = recordVote(mockDb, 1, 2, 3);
-    expect(mockDb.recordVote).toHaveBeenCalledWith(1, 2, 3);
+    expect(mockDb.insertVote).toHaveBeenCalledWith(1, 2, 3);
     expect(res).toEqual({ success: true });
   });
 
@@ -19,7 +19,7 @@ describe('votingService', () => {
   });
 
   test('getVoteCounts delegates to db', () => {
-    const mockDb: any = { getVoteCountsForNomination: jest.fn().mockReturnValue([{ video_id: 1, votes: 2 }]) };
+    const mockDb: any = { selectVoteCountsForNomination: jest.fn().mockReturnValue([{ video_id: 1, votes: 2 }]) };
     expect(getVoteCounts(mockDb, 5)).toEqual([{ video_id: 1, votes: 2 }]);
   });
 });

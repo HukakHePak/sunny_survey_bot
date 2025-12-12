@@ -59,30 +59,31 @@ export function initDb(dbPath: string) {
     )`
   ).run();
 
+
   const getMaxPosition = () => db.prepare('SELECT MAX(position) as m FROM nominations').get()?.m || 0;
 
-  function createNomination(title: string) {
-    const pos = getMaxPosition() + 1;
-    const info = db.prepare('INSERT INTO nominations (title, position) VALUES (?, ?)').run(title, pos);
-    return { id: info.lastInsertRowid as number, title, position: pos };
+  // Low-level DB primitives (no business logic)
+  function insertNomination(title: string, position: number) {
+    const info = db.prepare('INSERT INTO nominations (title, position) VALUES (?, ?)').run(title, position);
+    return { id: info.lastInsertRowid as number };
   }
 
-  function addVideo(nominationId: number, fileId: string, participantNick?: string, title?: string) {
+  function insertVideo(nominationId: number, fileId: string, participantNick?: string, title?: string) {
     const info = db
       .prepare('INSERT INTO videos (nomination_id, title, file_id, participant_nick) VALUES (?, ?, ?, ?)')
       .run(nominationId, title || null, fileId, participantNick || null);
     return { id: info.lastInsertRowid as number };
   }
 
-  function getNominationByPosition(position: number) {
+  function selectNominationByPosition(position: number) {
     return db.prepare('SELECT * FROM nominations WHERE position = ?').get(position);
   }
 
-  function getNominationById(id: number) {
+  function selectNominationById(id: number) {
     return db.prepare('SELECT * FROM nominations WHERE id = ?').get(id);
   }
 
-  function getVideosByNomination(nominationId: number) {
+  function selectVideosByNomination(nominationId: number) {
     return db.prepare('SELECT * FROM videos WHERE nomination_id = ? ORDER BY id').all(nominationId);
   }
 
@@ -91,16 +92,15 @@ export function initDb(dbPath: string) {
     return r ? r.value : null;
   }
 
-  function setSetting(key: string, value: string) {
+  function upsertSetting(key: string, value: string) {
     db.prepare('INSERT INTO settings(key,value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key, value);
   }
 
-  function isNominationClosed(id: number) {
+  function selectIsNominationClosed(id: number) {
     try {
       const r = db.prepare('SELECT closed FROM nominations WHERE id = ?').get(id);
       return r ? Boolean(r.closed) : false;
     } catch (e) {
-      // If column is missing, try to add it (best-effort) and treat as not closed
       try {
         db.prepare('ALTER TABLE nominations ADD COLUMN closed INTEGER DEFAULT 0').run();
       } catch (ignored) {}
@@ -108,7 +108,7 @@ export function initDb(dbPath: string) {
     }
   }
 
-  function closeNomination(id: number) {
+  function updateCloseNomination(id: number) {
     return db.prepare('UPDATE nominations SET closed = 1 WHERE id = ?').run(id);
   }
 
@@ -121,33 +121,20 @@ export function initDb(dbPath: string) {
     db.prepare('INSERT INTO user_progress(user_id, position) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET position=excluded.position').run(userId, position);
   }
 
-  function advanceUserPosition(userId: number) {
-    const cur = getUserPosition(userId) || 1;
-    const next = cur + 1;
-    setUserPosition(userId, next);
-    return next;
+  // Vote primitives
+  function selectExistingVote(userId: number, nominationId: number) {
+    return db.prepare('SELECT id FROM votes WHERE user_id = ? AND nomination_id = ?').get(userId, nominationId);
   }
 
-  function recordVote(userId: number, nominationId: number, videoId: number) {
-    if (isNominationClosed(nominationId)) {
-      return { success: false, reason: 'Голосование по этой номинации закрыто администратором.' };
-    }
-
-    const repeatAllowed = getSetting('repeat_votes_allowed');
-    const repeat = repeatAllowed === null ? '1' : repeatAllowed; // default allow
-
-    const existing = db.prepare('SELECT id FROM votes WHERE user_id = ? AND nomination_id = ?').get(userId, nominationId);
-    if (existing && repeat !== '1') {
-      return { success: false, reason: 'Повторное голосование запрещено администратором.' };
-    }
-
-    // remove previous vote for this user and nomination (if repeat allowed we'll replace)
-    db.prepare('DELETE FROM votes WHERE user_id = ? AND nomination_id = ?').run(userId, nominationId);
-    db.prepare('INSERT INTO votes (user_id, nomination_id, video_id) VALUES (?, ?, ?)').run(userId, nominationId, videoId);
-    return { success: true };
+  function deleteVotesByUserNomination(userId: number, nominationId: number) {
+    return db.prepare('DELETE FROM votes WHERE user_id = ? AND nomination_id = ?').run(userId, nominationId);
   }
 
-  function getVoteCountsForNomination(nominationId: number) {
+  function insertVote(userId: number, nominationId: number, videoId: number) {
+    return db.prepare('INSERT INTO votes (user_id, nomination_id, video_id) VALUES (?, ?, ?)').run(userId, nominationId, videoId);
+  }
+
+  function selectVoteCountsForNomination(nominationId: number) {
     return db
       .prepare(
         `SELECT v.video_id, COUNT(*) as votes FROM votes v WHERE v.nomination_id = ? GROUP BY v.video_id ORDER BY votes DESC`
@@ -155,7 +142,7 @@ export function initDb(dbPath: string) {
       .all(nominationId);
   }
 
-  function getAllResults() {
+  function selectAllResults() {
     return db
       .prepare(
         `SELECT n.id as nomination_id, n.title as nomination_title, v.id as video_id, v.participant_nick, v.file_id, COUNT(vt.id) as votes
@@ -168,41 +155,26 @@ export function initDb(dbPath: string) {
       .all();
   }
 
-  function exportResultsCSV() {
-    const rows = getAllResults();
-    const header = ['nomination_id', 'nomination_title', 'video_id', 'participant_nick', 'file_id', 'votes'];
-    const lines = [header.join(',')];
-    for (const r of rows) {
-      const safe = (v: any) => {
-        if (v === null || v === undefined) return '';
-        return String(v).replace(/"/g, '""');
-      };
-      lines.push(
-        `"${safe(r.nomination_id)}","${safe(r.nomination_title)}","${safe(r.video_id)}","${safe(
-          r.participant_nick
-        )}","${safe(r.file_id)}","${safe(r.votes)}"`
-      );
-    }
-    return lines.join('\n');
-  }
-
   return {
     db,
-    createNomination,
-    addVideo,
-    getNominationByPosition,
-    getNominationById,
-    getVideosByNomination,
-    recordVote,
-    getVoteCountsForNomination,
-    getAllResults,
-    exportResultsCSV,
+    db,
+    // primitives
+    getMaxPosition,
+    insertNomination,
+    insertVideo,
+    selectNominationByPosition,
+    selectNominationById,
+    selectVideosByNomination,
+    selectExistingVote,
+    deleteVotesByUserNomination,
+    insertVote,
+    selectVoteCountsForNomination,
+    selectAllResults,
     getSetting,
-    setSetting,
-    isNominationClosed,
-    closeNomination,
+    upsertSetting,
+    selectIsNominationClosed,
+    updateCloseNomination,
     getUserPosition,
     setUserPosition,
-    advanceUserPosition,
   };
 }

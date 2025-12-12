@@ -1,4 +1,5 @@
 import { Bot, InlineKeyboard } from 'grammy';
+import * as nominationService from '../services/nominationService';
 
 export function registerCommands(bot: Bot, db: any, isAdmin: (id?: number) => boolean) {
   bot.command('start', async (ctx) => { await ctx.reply('Привет! Используйте /whoami или команды админа.'); });
@@ -9,15 +10,15 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (id?: number) => bo
     const fromId = ctx.from?.id; if (!isAdmin(fromId)) return ctx.reply('Нет прав.');
     const parts = ctx.message?.text?.split(/\s+/) || []; const title = parts.slice(1).join(' ').trim();
     if (!title) return ctx.reply('Использование: /add_nomination <title>');
-    const nom = db.createNomination(title);
+    const nom = nominationService.createNomination(db, title);
     return ctx.reply(`Создана номинация: id=${nom.id} position=${nom.position}`);
   });
 
   let nextPosition = 1;
   bot.command('show_next', async (ctx) => {
     const fromId = ctx.from?.id; if (!isAdmin(fromId)) return ctx.reply('Нет прав.');
-    const nom = db.getNominationByPosition(nextPosition); if (!nom) return ctx.reply('Новых номинаций нет.');
-    const videos = db.getVideosByNomination(nom.id); if (!videos || videos.length === 0) return ctx.reply('У этой номинации нет видео.');
+    const nom = nominationService.getNominationByPosition(db, nextPosition); if (!nom) return ctx.reply('Новых номинаций нет.');
+    const videos = db.selectVideosByNomination(nom.id); if (!videos || videos.length === 0) return ctx.reply('У этой номинации нет видео.');
     await ctx.reply(`Номинация: ${nom.title}`);
     for (const v of videos) { try { await ctx.replyWithVideo(v.file_id, { caption: v.participant_nick || '' }); } catch (e) { /* ignore */ } }
     const kb = new InlineKeyboard(); for (const v of videos) kb.text(v.participant_nick || `#${v.id}`, `vote:${nom.id}:${v.id}`);
@@ -26,7 +27,7 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (id?: number) => bo
 
   bot.command('export_results', async (ctx) => {
     const fromId = ctx.from?.id; if (!isAdmin(fromId)) return ctx.reply('Нет прав.');
-    const csv = db.exportResultsCSV(); const fn = `/data/results_${Date.now()}.csv`;
+    const csv = nominationService.exportResults(db); const fn = `/data/results_${Date.now()}.csv`;
     try { (await import('fs')).default.writeFileSync(fn, csv, 'utf8'); await ctx.replyWithDocument({ source: (await import('fs')).default.createReadStream(fn) } as any); } catch (e) { await ctx.reply('Ошибка при создании файла результатов.'); }
   });
 
