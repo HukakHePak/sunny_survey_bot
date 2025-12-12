@@ -48,6 +48,31 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (id?: number) => bo
     try { (await import('fs')).default.writeFileSync(fn, csv, 'utf8'); await ctx.replyWithDocument({ source: (await import('fs')).default.createReadStream(fn) } as any); } catch (e) { await ctx.reply('Ошибка при создании файла результатов.'); }
   });
 
+  // Dev-only: seed test data
+  bot.command('seed', async (ctx) => {
+    const devMode = process.env.NODE_ENV === 'development' || process.env.DEV === 'true';
+    if (!devMode) return ctx.reply('Команда /seed доступна только в dev режиме.');
+    const fromId = ctx.from?.id; if (!isAdmin(fromId)) return ctx.reply('Нет прав.');
+    try {
+      // wipe existing nominations/videos/votes (dev only)
+      if (db && db.db) {
+        db.db.prepare('DELETE FROM votes').run();
+        db.db.prepare('DELETE FROM videos').run();
+        db.db.prepare('DELETE FROM nominations').run();
+      }
+      const titles = ['Лучшее вступление', 'Лучшее соло', 'Лучший дуэт'];
+      for (const t of titles) {
+        const nom = nominationService.createNomination(db, t);
+        for (let i = 1; i <= 4; i++) {
+          nominationService.addVideoToNomination(db, nom.id, `file_${nom.id}_${i}`, `User${i}`);
+        }
+      }
+      return ctx.reply('DB заполнена тестовыми данными.');
+    } catch (e) {
+      return ctx.reply('Ошибка при заполнении тестовых данных.');
+    }
+  });
+
   bot.command('set_repeat_vote', async (ctx) => {
     const fromId = ctx.from?.id; if (!isAdmin(fromId)) return ctx.reply('Нет прав.');
     const parts = ctx.message?.text?.split(/\s+/) || []; if (parts.length < 2) return ctx.reply('Использование: /set_repeat_vote on|off');
