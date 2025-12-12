@@ -14,16 +14,23 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
         return;
       }
       const accepting = db.getSetting ? db.getSetting('accepting_applications') : '1';
+      const repeat = db.getSetting ? db.getSetting('repeat_votes_allowed') : '1';
       const lines = noms.map((n: any) => `👑 ${n.title}${n.closed ? ' (закрыта)' : ''}`);
-      let text = `Привет!\n\n${lines.join('\n\n')}`;
-      if (accepting === '1') {
-        text += `\n\nНажми «Начать», чтобы пройти голосование.`;
-        const kb = new InlineKeyboard().text('Начать', 'begin');
-        await ctx.reply(text, { reply_markup: kb });
-      } else {
+      let text = `Привет! Голосование за номинации:\n\n${lines.join('\n\n')}`;
+      if (accepting !== '1') {
         text += `\n\nПриём заявок временно закрыт. Голосование недоступно.`;
         await ctx.reply(text);
+        return;
       }
+      if (repeat !== '1') {
+        text += `\n\nПовторное голосование запрещено администратором.`;
+        await ctx.reply(text);
+        return;
+      }
+      // accepting === '1' && repeat === '1'
+      text += `\n\nНажми «Начать», чтобы пройти голосование.`;
+      const kb = new InlineKeyboard().text('Начать', 'begin');
+      await ctx.reply(text, { reply_markup: kb });
     } catch (e) {
       await ctx.reply('Ошибка получения списка номинаций.');
     }

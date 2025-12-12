@@ -9,6 +9,12 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
   bot.callbackQuery('begin', async (ctx) => {
     await ctx.answerCallbackQuery();
     const userId = ctx.from?.id; if (!userId) return;
+    // if accepting applications is disabled, do not proceed
+    const accepting = db.getSetting ? db.getSetting('accepting_applications') : '1';
+    if (accepting !== '1') {
+      try { await ctx.reply('Приём заявок временно закрыт. Голосование недоступно.'); } catch (e) {}
+      return;
+    }
     try {
       // set user to first nomination
       if (db.setUserPosition) db.setUserPosition(userId, 1);
