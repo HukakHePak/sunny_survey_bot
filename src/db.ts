@@ -16,7 +16,7 @@ export function initDb(dbPath: string) {
   // Migration: ensure `closed` column exists for older databases
   try {
     const cols = db.prepare("PRAGMA table_info(nominations)").all();
-    const hasClosed = cols.some((c: any) => c && c.name === 'closed');
+    const hasClosed = (cols as Array<{ name?: string }>).some((c) => c && c.name === 'closed');
     if (!hasClosed) {
       db.prepare('ALTER TABLE nominations ADD COLUMN closed INTEGER DEFAULT 0').run();
     }

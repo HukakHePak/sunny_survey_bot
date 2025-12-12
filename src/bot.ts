@@ -3,8 +3,10 @@ import { registerCommands } from './commands';
 import { registerHandlers } from './handlers';
 import CommandNames from './commands/commandNames';
 import { fullCommands, minimalCommands } from './commands/commandsList';
+import { getSettingDefault } from './utils';
+import { DbAPI } from './types';
 
-export async function startBot(token: string, db: any) {
+export async function startBot(token: string, db: DbAPI) {
   const bot = new Bot(token);
 
   bot.catch((err: any) => {
@@ -70,8 +72,8 @@ export async function startBot(token: string, db: any) {
       } else if (db.selectAllNominations && db.selectVideosByNomination) {
         for (const n of noms) { const vs = db.selectVideosByNomination(n.id) || []; videosCount += vs.length; }
       }
-      const accepting = db.getSetting ? db.getSetting('accepting_applications') : '1';
-      const repeat = db.getSetting ? db.getSetting('repeat_votes_allowed') : '1';
+      const accepting = getSettingDefault(db, 'accepting_applications', '1');
+      const repeat = getSettingDefault(db, 'repeat_votes_allowed', '1');
       const dbPath = process.env.DB_PATH || 'unknown';
       const lines = [
         `Бот запущен на сервере.`,

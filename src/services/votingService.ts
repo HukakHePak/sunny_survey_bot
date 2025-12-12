@@ -1,12 +1,14 @@
-export function recordVote(db: any, userId: number, nominationId: number, videoId: number) {
+import { DbAPI } from '../types';
+import { getSettingDefault } from '../utils';
+
+export function recordVote(db: DbAPI, userId: number, nominationId: number, videoId: number) {
   if (!userId || !nominationId || !videoId) return { success: false, reason: 'invalid' };
 
   if (db.selectIsNominationClosed && db.selectIsNominationClosed(nominationId)) {
     return { success: false, reason: 'Голосование по этой номинации закрыто администратором.' };
   }
 
-  const repeatAllowed = db.getSetting ? db.getSetting('repeat_votes_allowed') : null;
-  const repeat = repeatAllowed === null ? '1' : repeatAllowed;
+    const repeat = getSettingDefault(db, 'repeat_votes_allowed', '1');
 
   const existing = db.selectExistingVote ? db.selectExistingVote(userId, nominationId) : null;
   if (existing && repeat !== '1') {
@@ -18,7 +20,7 @@ export function recordVote(db: any, userId: number, nominationId: number, videoI
   return { success: true };
 }
 
-export function getVoteCounts(db: any, nominationId: number) {
+export function getVoteCounts(db: DbAPI, nominationId: number) {
   if (!nominationId) return [];
   return (db.selectVoteCountsForNomination && db.selectVoteCountsForNomination(nominationId)) || [];
 }

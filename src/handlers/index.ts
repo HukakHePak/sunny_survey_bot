@@ -3,22 +3,20 @@ import * as votingService from '../services/votingService';
 import * as nominationService from '../services/nominationService';
 import * as userService from '../services/userService';
 import sessions from '../state/creationSessions';
+import { getSettingDefault, pushMsg as utilPushMsg } from '../utils';
+import { DbAPI, NominationRow, VideoRow } from '../types';
 
-export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: number; username?: string } | number | string) => boolean) {
+export function registerHandlers(
+  bot: Bot,
+  db: DbAPI,
+  isAdmin: (user?: { id?: number; username?: string } | number | string) => boolean
+) {
   // track messages sent by the bot per user (so we can delete them on retake)
   const userMessages: Record<number, number[]> = {};
   // track admin control message (save/cancel) per admin during nomination creation
   const adminControlsMsg: Record<number, number> = {};
 
-  const pushMsg = (userId: number, msg: any) => {
-    try {
-      if (!msg) return;
-      const mid = (msg as any).message_id || (msg as any).messageId || null;
-      if (!mid) return;
-      userMessages[userId] = userMessages[userId] || [];
-      userMessages[userId].push(mid);
-    } catch (e) { /* ignore */ }
-  };
+  const pushMsg = (userId: number, msg: import('../utils').MinimalMessage | undefined) => utilPushMsg(userMessages, userId, msg);
 
   // begin callback: initialize user position and send first nomination
   bot.callbackQuery('begin', async (ctx) => {
@@ -27,7 +25,7 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     try { await ctx.deleteMessage(); } catch (e) { /* ignore */ }
     const userId = ctx.from?.id; if (!userId) return;
     // if accepting applications is disabled, do not proceed
-    const accepting = db.getSetting ? db.getSetting('accepting_applications') : '1';
+    const accepting = getSettingDefault(db, 'accepting_applications', '1');
     if (accepting !== '1') {
       try { await ctx.reply('Приём заявок временно закрыт. Голосование недоступно.'); } catch (e) {}
       return;
@@ -48,7 +46,8 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
   });
 
   bot.on('message', async (ctx) => {
-    const msg = ctx.message as any; const caption: string | undefined = msg?.caption;
+    type IncomingMsg = { caption?: string; text?: string; video?: { file_id?: string }; document?: { file_id?: string } };
+    const msg = ctx.message as unknown as IncomingMsg; const caption: string | undefined = msg?.caption;
     const from = ctx.from;
     const userId = from?.id;
     // ignore all plain messages from non-admin users — управление только через кнопки
@@ -100,14 +99,14 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
           if (msg.text && !msg.text.startsWith('/')) {
             const t = msg.text.trim();
             if (t === 'Отмена') {
-              const nomId = (session as any).nominationId;
+                const nomId = (session as { state: 'collecting_videos'; nominationId: number }).nominationId;
               try { nominationService.deleteNomination(db, nomId); } catch (e) {}
               sessions.endSession(userId);
               await ctx.reply('Добавление отменено. Номинация не создана.', { reply_markup: { remove_keyboard: true } });
               return;
             }
             if (t === 'Сохранить') {
-              const nomId = (session as any).nominationId;
+              const nomId = (session as { state: 'collecting_videos'; nominationId: number }).nominationId;
               const vids = db.selectVideosByNomination ? db.selectVideosByNomination(nomId) : [];
               if (!vids || vids.length < 2) {
                 await ctx.reply('Нельзя сохранить — для номинации требуется минимум 2 видео.');
@@ -133,7 +132,7 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
             }
             // create nomination now and add video
             try {
-              const title = (session as any).title;
+              const title = (session as { state: 'collecting_videos_pending'; title: string }).title;
               const nom = nominationService.createNomination(db, title);
               nominationService.addVideoToNomination(db, nom.id, fileId, nick);
               sessions.startCollecting(userId, nom.id);
@@ -175,8 +174,8 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     const res = votingService.recordVote(db, userId, nominationId, videoId);
     if (!res || res.success === false) return ctx.answerCallbackQuery({ text: res?.reason || 'Голос не принят.' });
 
-    const videos = db.selectVideosByNomination(nominationId) || [];
-    const selected = videos.find((v: any) => Number(v.id) === Number(videoId));
+    const videos = (db.selectVideosByNomination ? db.selectVideosByNomination(nominationId) : []) || [];
+    const selected = videos.find((v: VideoRow) => Number(v.id) === Number(videoId));
     const nomination = db.selectNominationById ? db.selectNominationById(nominationId) : null;
     const participant = selected ? (selected.participant_nick || `#${selected.id}`) : `#${videoId}`;
     const title = nomination ? nomination.title : '';
@@ -246,9 +245,9 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
         try { pushMsg(userId, m); } catch (e) {}
         return;
       }
-      const accepting = db.getSetting ? db.getSetting('accepting_applications') : '1';
-      const repeatSetting = db.getSetting ? db.getSetting('repeat_votes_allowed') : '1';
-      const lines = noms.map((n: any) => `👑 ${n.title}${n.closed ? ' (закрыта)' : ''}`);
+      const accepting = getSettingDefault(db, 'accepting_applications', '1');
+      const repeatSetting = getSettingDefault(db, 'repeat_votes_allowed', '1');
+      const lines = (noms as NominationRow[]).map((n) => `👑 ${n.title}${n.closed ? ' (закрыта)' : ''}`);
       let text = `Привет! Голосование за номинации:\n\n${lines.join('\n\n')}`;
       if (accepting !== '1') {
         text += `\n\nПриём заявок временно закрыт. Голосование недоступно.`;
@@ -328,7 +327,7 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
         return;
       }
       if (session.state === 'collecting_videos') {
-        const nomId = (session as any).nominationId;
+        const nomId = (session as { state: 'collecting_videos'; nominationId: number }).nominationId;
         try { nominationService.deleteNomination(db, nomId); } catch (e) {}
         sessions.endSession(userId);
         try {
@@ -350,7 +349,7 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
       try { await ctx.reply('Нет активной сессии добавления номинации.'); } catch (e) {}
       return;
     }
-    const nomId = (session as any).nominationId;
+    const nomId = (session as { state: 'collecting_videos'; nominationId: number }).nominationId;
     const vids = db.selectVideosByNomination ? db.selectVideosByNomination(nomId) : [];
     if (!vids || vids.length < 2) {
       try { await ctx.reply('Нельзя сохранить — для номинации требуется минимум 2 видео.'); } catch (e) {}
@@ -374,16 +373,19 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     await ctx.answerCallbackQuery();
     const from = ctx.from; if (!isAdmin(from)) return ctx.answerCallbackQuery({ text: 'Нет прав.' });
     try {
-      // delete all votes
+      // delete all votes and report how many were removed
+      let deleted = 0;
       if (db.db) {
-        db.db.prepare('DELETE FROM votes').run();
+        const res = db.db.prepare('DELETE FROM votes').run();
+        deleted = res && (res as any).changes ? (res as any).changes : 0;
         try { db.db.prepare('VACUUM').run(); } catch (e) { /* ignore */ }
         // reset user progress positions
         try { db.db.prepare('UPDATE user_progress SET position = 1').run(); } catch (e) { /* ignore */ }
       } else if (db.deleteAllVotes) {
         try { db.deleteAllVotes(); } catch (e) { /* ignore */ }
       }
-      try { await ctx.editMessageText('Результаты голосования очищены.'); } catch (e) { await ctx.reply('Результаты голосования очищены.'); }
+      const msg = deleted ? `Результаты голосования очищены. Удалено голосов: ${deleted}` : 'Результаты голосования очищены.';
+      try { await ctx.editMessageText(msg); } catch (e) { await ctx.reply(msg); }
     } catch (e) {
       try { await ctx.reply('Ошибка при очистке результатов.'); } catch (er) {}
     }
@@ -391,10 +393,16 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
 
 }
 
-export async function sendNominationToUser(bot: Bot, db: any, userId: number, nom: any, pushMsg?: (uid: number, msg: any) => void) {
+export async function sendNominationToUser(
+  bot: Bot,
+  db: DbAPI,
+  userId: number,
+  nom: NominationRow,
+  pushMsg?: (uid: number, msg: import('../utils').MinimalMessage | undefined) => void
+) {
   try {
     const videos = (db.selectVideosByNomination && db.selectVideosByNomination(nom.id)) || [];
-    const first = videos.slice(0, 4);
+    const first = videos.slice(0, 4) as VideoRow[];
     // send up to 4 videos
     for (const v of first) {
       try {
@@ -406,10 +414,10 @@ export async function sendNominationToUser(bot: Bot, db: any, userId: number, no
     }
     // check user's existing vote
     const userVoteRow = db.selectUserVote ? db.selectUserVote(userId, nom.id) : null;
-    const repeat = db.getSetting ? db.getSetting('repeat_votes_allowed') : '1';
+    const repeat = getSettingDefault(db, 'repeat_votes_allowed', '1');
     if (userVoteRow && userVoteRow.video_id && repeat !== '1') {
       // find participant nick
-      const selected = first.find((v: any) => Number(v.id) === Number(userVoteRow.video_id)) || (db.selectVideosByNomination ? db.selectVideosByNomination(nom.id).find((v: any) => Number(v.id) === Number(userVoteRow.video_id)) : null);
+      const selected = first.find((v) => Number(v.id) === Number(userVoteRow.video_id)) || (db.selectVideosByNomination ? db.selectVideosByNomination(nom.id).find((v) => Number(v.id) === Number(userVoteRow.video_id)) : null);
       const participant = selected ? (selected.participant_nick || `#${selected.id}`) : `#${userVoteRow.video_id}`;
       const text = `👑 ${nom.title}\n\nВы проголосовали за: ${participant}\n\nвы уже проголосовали, изменить выбор нельзя`;
       const m = await bot.api.sendMessage(userId, text);

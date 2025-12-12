@@ -3,8 +3,9 @@ import * as nominationService from '../services/nominationService';
 import sessions from '../state/creationSessions';
 import CommandNames from './commandNames';
 import { fullCommands } from './commandsList';
+import { DbAPI, NominationRow, VideoRow } from '../types';
 
-export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: number; username?: string } | number | string) => boolean) {
+export function registerCommands(bot: Bot, db: DbAPI, isAdmin: (user?: { id?: number; username?: string } | number | string) => boolean) {
   // start: show nominations and 'Начать'
   const safeCommand = (name: string, handler: (ctx: any) => any) => {
     try {
@@ -23,7 +24,7 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
       }
       const accepting = db.getSetting ? db.getSetting('accepting_applications') : '1';
       const repeat = db.getSetting ? db.getSetting('repeat_votes_allowed') : '1';
-      const lines = noms.map((n: any) => `👑 ${n.title}${n.closed ? ' (закрыта)' : ''}`);
+      const lines = (noms as NominationRow[]).map((n) => `👑 ${n.title}${n.closed ? ' (закрыта)' : ''}`);
       let text = `Привет! Голосование за номинации:\n\n${lines.join('\n\n')}`;
       if (accepting !== '1') {
         text += `\n\nПриём заявок временно закрыт. Голосование недоступно.`;
@@ -149,15 +150,15 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
     if (!isAdmin(from)) return ctx.reply('Нет прав.');
     const user = from;
     const userId = user.id;
-    const noms = nominationService.listNominations(db);
+    const noms = nominationService.listNominations(db) as NominationRow[];
     if (!noms || noms.length === 0) return ctx.reply('Номинаций нет.');
     const lines: string[] = [];
     for (const n of noms) {
       const voteRow = db.selectUserVote ? db.selectUserVote(userId, n.id) : null;
       let line = `${n.title}`;
       if (voteRow && voteRow.video_id) {
-        const vids = db.selectVideosByNomination ? db.selectVideosByNomination(n.id) : [];
-        const vid = vids.find((v: any) => Number(v.id) === Number(voteRow.video_id));
+        const vids = (db.selectVideosByNomination ? db.selectVideosByNomination(n.id) : []) as VideoRow[];
+        const vid = vids.find((v) => Number(v.id) === Number(voteRow.video_id));
         const nick = vid ? (vid.participant_nick || `#${vid.id}`) : `#${voteRow.video_id}`;
         line += ` — Вы проголосовали за: ${nick}`;
       }

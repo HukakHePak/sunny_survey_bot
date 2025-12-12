@@ -3,11 +3,6 @@
   "version": "0.1.0",
   "description": "Telegram voting bot scaffold",
   "main": "dist/index.js",
-  "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "ts-node-dev --respawn --transpile-only src/index.ts"
-  },
   "jest": {
     "preset": "ts-jest",
     "testEnvironment": "node",
