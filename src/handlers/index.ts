@@ -182,17 +182,51 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
 
   bot.callbackQuery('retake_no', async (ctx) => {
     await ctx.answerCallbackQuery();
-    try { await ctx.reply('Ок.'); } catch (e) {}
+    // delete the retake prompt and show waiting message
+    try { await ctx.deleteMessage(); } catch (e) { /* ignore */ }
+    try { await ctx.reply('Спасибо! Ожидайте результатов.'); } catch (e) { /* ignore */ }
   });
 
   bot.callbackQuery('retake_yes', async (ctx) => {
     await ctx.answerCallbackQuery();
-    // delete the retake prompt
-    try { await ctx.deleteMessage(); } catch (e) { /* ignore */ }
+    // user agreed: delete all tracked bot messages, reset position and send start message
     const userId = ctx.from?.id; if (!userId) return;
     try {
-      const m = await bot.api.sendMessage(userId, 'Спасибо! Ожидайте результатов.');
-      try { pushMsg(userId, m); } catch (e) { /* ignore */ }
+      // delete tracked bot messages
+      const list = userMessages[userId] || [];
+      for (const mid of list) {
+        try { await bot.api.deleteMessage(userId, mid); } catch (e) { /* ignore */ }
+      }
+      userMessages[userId] = [];
+      // reset position
+      if (db.setUserPosition) db.setUserPosition(userId, 1);
+      // send start-like message with nominations and Begin button
+      const noms = db.selectAllNominations ? db.selectAllNominations() : [];
+      if (!noms || noms.length === 0) {
+        const m = await bot.api.sendMessage(userId, 'Привет! В системе пока нет номинаций. Обратитесь к администратору.');
+        try { pushMsg(userId, m); } catch (e) {}
+        return;
+      }
+      const accepting = db.getSetting ? db.getSetting('accepting_applications') : '1';
+      const repeatSetting = db.getSetting ? db.getSetting('repeat_votes_allowed') : '1';
+      const lines = noms.map((n: any) => `👑 ${n.title}${n.closed ? ' (закрыта)' : ''}`);
+      let text = `Привет! Голосование за номинации:\n\n${lines.join('\n\n')}`;
+      if (accepting !== '1') {
+        text += `\n\nПриём заявок временно закрыт. Голосование недоступно.`;
+        const m = await bot.api.sendMessage(userId, text);
+        try { pushMsg(userId, m); } catch (e) {}
+        return;
+      }
+      if (repeatSetting !== '1') {
+        text += `\n\nПовторное голосование запрещено администратором.`;
+        const m = await bot.api.sendMessage(userId, text);
+        try { pushMsg(userId, m); } catch (e) {}
+        return;
+      }
+      text += `\n\nНажми «Начать», чтобы пройти голосование.`;
+      const kb = new InlineKeyboard().text('Начать', 'begin');
+      const m = await bot.api.sendMessage(userId, text, { reply_markup: kb });
+      try { pushMsg(userId, m); } catch (e) {}
     } catch (e) { /* ignore */ }
   });
 
