@@ -31,11 +31,11 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
         return;
       }
 
-      // If repeat voting is disabled, and the user has already completed voting,
-      // don't show the "Начать" button — inform them that they've already voted.
+      // If the user has already voted for all nominations, don't show the
+      // "Начать" button — this applies regardless of the repeat setting.
       const from = ctx.from;
       const userId = from?.id;
-      if (repeat !== '1' && userId) {
+      if (userId) {
         let allVoted = true;
         for (const n of noms) {
           const voteRow = db.selectUserVote ? db.selectUserVote(userId, n.id) : null;
@@ -45,7 +45,7 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
           }
         }
         if (allVoted) {
-          text += `\n\nВы уже проголосовали. Повторное голосование отключено.`;
+          text += `\n\nВы уже проголосовали.`;
           await ctx.reply(text);
           return;
         }
