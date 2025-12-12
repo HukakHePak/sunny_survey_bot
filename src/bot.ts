@@ -13,7 +13,8 @@ export async function startBot(token: string, db: any) {
   const ADMIN_IDS = process.env.ADMIN_CHAT_ID ? process.env.ADMIN_CHAT_ID.split(',').map((s) => s.trim()) : null;
   const ADMIN_USERNAMES = process.env.ADMIN_USERNAMES ? process.env.ADMIN_USERNAMES.split(',').map((s) => s.trim().replace(/^@/, '')) : null;
   const isAdmin = (user?: { id?: number; username?: string } | number | string) => {
-    if (!ADMIN_IDS && !ADMIN_USERNAMES) return true; // no admin restriction
+    // By default, do NOT grant admin rights unless configured via env vars
+    if (!ADMIN_IDS && !ADMIN_USERNAMES) return false;
     // normalize
     if (typeof user === 'number' || (typeof user === 'string' && /^[0-9]+$/.test(user))) {
       const idStr = String(user);
@@ -33,24 +34,34 @@ export async function startBot(token: string, db: any) {
 
   const botCommands = [
     { command: CommandNames.Start, description: 'Запустить бота' },
-    // `me` команда оставлена, но не показывается в меню
     { command: CommandNames.Add, description: 'Добавить номинацию' },
     { command: CommandNames.List, description: 'Показать номинации' },
     { command: CommandNames.Remove, description: 'Удалить номинацию' },
     { command: CommandNames.Survey, description: 'Возобновить/остановить голосование' },
     { command: CommandNames.RepeatVote, description: 'Разрешить/запретить повторное голосование' },
-    { command: CommandNames.Results, description: 'Экспорт результатов' },
+    { command: CommandNames.Results, description: 'Показать результаты' },
+    { command: CommandNames.Stats, description: 'Статус бота' },
   ];
 
   if (process.env.DISABLE_TELEGRAM === 'true') {
     console.log('DISABLE_TELEGRAM=true — пропускаю инициализацию grammy');
     setInterval(() => {}, 1 << 30);
   } else {
-    // remove global commands for regular users
+    // remove commands globally and for all chats so only admin chat(s) get commands
     try {
       await bot.api.setMyCommands([], { scope: { type: 'default' } as any });
     } catch (e) {
-      // ignore failures to clear global commands
+      // ignore failures to clear default commands
+    }
+    try {
+      await bot.api.setMyCommands([], { scope: { type: 'all_private_chats' } as any });
+    } catch (e) {
+      // ignore
+    }
+    try {
+      await bot.api.setMyCommands([], { scope: { type: 'all_group_chats' } as any });
+    } catch (e) {
+      // ignore
     }
 
     // set commands only for admin chats (if configured)
@@ -101,6 +112,7 @@ export async function startBot(token: string, db: any) {
           try { await bot.api.sendMessage(target, text); } catch (e) { console.warn('send admin status failed for', target, e); }
         }
       }
+      // skipping broadcast to all users on startup
     } catch (e) {
       console.warn('Failed to send admin startup status', e);
     }
