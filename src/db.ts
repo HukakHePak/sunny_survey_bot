@@ -120,7 +120,6 @@ export function initDb(dbPath: string) {
     // remove votes for nomination
     db.prepare('DELETE FROM votes WHERE nomination_id = ?').run(id);
     // remove videos for nomination
-    db.prepare('DELETE FROM videos WHERE nomination_id = ?').unrestricted = true;
     db.prepare('DELETE FROM videos WHERE nomination_id = ?').run(id);
     // remove nomination
     db.prepare('DELETE FROM nominations WHERE id = ?').run(id);
@@ -177,7 +176,6 @@ export function initDb(dbPath: string) {
   }
 
   return {
-    db,
     db,
     // primitives
     getMaxPosition,
