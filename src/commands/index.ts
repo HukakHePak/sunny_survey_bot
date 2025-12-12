@@ -74,14 +74,34 @@ export function registerCommands(bot: Bot, db: any, isAdmin: (user?: { id?: numb
 
   bot.command('set_repeat_vote', async (ctx) => {
     const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
-    const parts = ctx.message?.text?.split(/\s+/) || []; if (parts.length < 2) return ctx.reply('Использование: /set_repeat_vote on|off');
-    const arg = parts[1].toLowerCase(); if (arg !== 'on' && arg !== 'off') return ctx.reply('Значение должно быть on или off');
-    db.setSetting('repeat_votes_allowed', arg === 'on' ? '1' : '0'); return ctx.reply(`Повторное голосование теперь ${arg === 'on' ? 'разрешено' : 'запрещено'}`);
+    const cur = db.getSetting ? db.getSetting('repeat_votes_allowed') : '0';
+    const next = cur === '1' ? '0' : '1';
+    if (db.upsertSetting) db.upsertSetting('repeat_votes_allowed', next);
+    return ctx.reply(`Повторное голосование теперь ${next === '1' ? 'разрешено' : 'запрещено'}`);
   });
 
   bot.command('close_nomination', async (ctx) => {
     const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
-    const parts = ctx.message?.text?.split(/\s+/) || []; if (parts.length < 2) return ctx.reply('Использование: /close_nomination <nomination_id>');
-    const id = Number(parts[1]); if (!id) return ctx.reply('Неверный id'); db.closeNomination(id); return ctx.reply(`Номинация ${id} закрыта администратором.`);
+    // toggle global 'accepting applications' setting. When off, voting disabled for all nominations.
+    const cur = db.getSetting ? db.getSetting('accepting_applications') : '1';
+    const next = cur === '1' ? '0' : '1';
+    if (db.upsertSetting) db.upsertSetting('accepting_applications', next);
+    return ctx.reply(`Приём заявок теперь ${next === '1' ? 'включён' : 'закрыт'}. Голосование ${next === '1' ? 'разрешено' : 'заблокировано'}.`);
+  });
+
+  // list nominations for admin (to choose id to delete)
+  bot.command('list_nominations', async (ctx) => {
+    const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
+    const noms = nominationService.listNominations(db);
+    if (!noms || noms.length === 0) return ctx.reply('Номинаций нет.');
+    const lines = noms.map((n: any) => `${n.id}. ${n.position}. ${n.title}${n.closed ? ' (закр.)' : ''}`);
+    return ctx.reply(`Список номинаций:\n${lines.join('\n')}`);
+  });
+
+  bot.command('delete_nomination', async (ctx) => {
+    const from = ctx.from; if (!isAdmin(from)) return ctx.reply('Нет прав.');
+    const parts = ctx.message?.text?.split(/\s+/) || []; if (parts.length < 2) return ctx.reply('Использование: /delete_nomination <nomination_id>');
+    const id = Number(parts[1]); if (!id) return ctx.reply('Неверный id');
+    try { nominationService.deleteNomination(db, id); return ctx.reply(`Номинация ${id} удалена.`); } catch (e) { return ctx.reply('Ошибка удаления номинации.'); }
   });
 }

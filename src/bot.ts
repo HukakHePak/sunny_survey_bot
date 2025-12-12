@@ -32,11 +32,11 @@ export async function startBot(token: string, db: any) {
 
   const botCommands = [
     { command: 'start', description: 'Запустить бота' },
-    { command: 'me', description: 'Показать ваш numeric id' },
+    // `me` команда оставлена, но не показывается в меню
     { command: 'add_nomination', description: 'Добавить номинацию' },
     { command: 'show_next', description: 'Показать следующую номинацию (админ)' },
-    { command: 'set_repeat_vote', description: 'Вкл/выкл повторные голоса (админ)' },
-    { command: 'close_nomination', description: 'Закрыть номинацию (админ)' },
+    { command: 'set_repeat_vote', description: 'Переключить повторные голоса (админ)' },
+    { command: 'close_nomination', description: 'Переключить приём заявок/голосование (админ)' },
     { command: 'export_results', description: 'Экспорт результатов (админ)' },
   ];
 

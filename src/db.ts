@@ -116,6 +116,19 @@ export function initDb(dbPath: string) {
     return db.prepare('UPDATE nominations SET closed = 1 WHERE id = ?').run(id);
   }
 
+  function deleteNomination(id: number) {
+    // remove votes for nomination
+    db.prepare('DELETE FROM votes WHERE nomination_id = ?').run(id);
+    // remove videos for nomination
+    db.prepare('DELETE FROM videos WHERE nomination_id = ?').unrestricted = true;
+    db.prepare('DELETE FROM videos WHERE nomination_id = ?').run(id);
+    // remove nomination
+    db.prepare('DELETE FROM nominations WHERE id = ?').run(id);
+    // shift positions down for nominations after deleted one
+    db.prepare('UPDATE nominations SET position = position - 1 WHERE position > (SELECT position FROM nominations WHERE id = ?)')
+      .run(id);
+  }
+
   function getUserPosition(userId: number) {
     const r = db.prepare('SELECT position FROM user_progress WHERE user_id = ?').get(userId);
     return r ? r.position : 1;
@@ -178,6 +191,7 @@ export function initDb(dbPath: string) {
     upsertSetting,
     selectIsNominationClosed,
     updateCloseNomination,
+    deleteNomination,
     getUserPosition,
     setUserPosition,
     selectAllNominations,

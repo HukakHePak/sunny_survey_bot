@@ -33,3 +33,13 @@ export function exportResults(db: any) {
   }
   return lines.join('\n');
 }
+
+export function deleteNomination(db: any, id: number) {
+  if (!id) throw new Error('invalid id');
+  if (!db.deleteNomination) throw new Error('DB delete not available');
+  db.deleteNomination(id);
+}
+
+export function listNominations(db: any) {
+  return db.selectAllNominations ? db.selectAllNominations() : [];
+}
