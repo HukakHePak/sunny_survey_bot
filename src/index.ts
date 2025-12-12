@@ -15,7 +15,6 @@ const db = initDb(dbPath);
 
 const bot = new Bot(token);
 
-// Global error handler so the bot doesn't crash on DB/other errors
 bot.catch((err: any) => {
   try {
     console.error('Error in middleware while handling update', err.update, err.error || err);
@@ -24,7 +23,6 @@ bot.catch((err: any) => {
   }
 });
 
-// Optional admin restriction (comma-separated chat ids)
 const ADMIN_IDS = process.env.ADMIN_CHAT_ID ? process.env.ADMIN_CHAT_ID.split(',').map((s) => s.trim()) : null;
 function isAdmin(userId?: number) {
   if (!ADMIN_IDS) return true;
@@ -32,21 +30,18 @@ function isAdmin(userId?: number) {
   return ADMIN_IDS.includes(String(userId));
 }
 
-// Keep track of which nomination position to show next (in-memory)
 let nextPosition = 1;
 
 bot.command('start', async (ctx) => {
   await ctx.reply('Привет! Используйте команды (в меню) для действий. Администраторы увидят дополнительные команды.');
 });
 
-// Utility: tell user their Telegram numeric id
 bot.command('whoami', async (ctx) => {
   const userId = ctx.from?.id;
   if (!userId) return ctx.reply('Не удалось определить ваш id.');
   return ctx.reply(`Ваш Telegram ID: ${userId}`);
 });
 
-// Admin: create nomination
 bot.command('add_nomination', async (ctx) => {
   const fromId = ctx.from?.id;
   if (!isAdmin(fromId)) return ctx.reply('Нет прав.');
@@ -57,7 +52,6 @@ bot.command('add_nomination', async (ctx) => {
   return ctx.reply(`Создана номинация: id=${nom.id} position=${nom.position}`);
 });
 
-// Admin: show next nomination (sends videos and keyboard)
 bot.command('show_next', async (ctx) => {
   const fromId = ctx.from?.id;
   if (!isAdmin(fromId)) return ctx.reply('Нет прав.');
@@ -83,7 +77,6 @@ bot.command('show_next', async (ctx) => {
   nextPosition += 1;
 });
 
-// Helper: send nomination and videos to a user (private)
 async function sendNominationToUser(userId: number, nom: any) {
   try {
     await bot.api.sendMessage(userId, `Номинация: ${nom.title}`);
@@ -91,19 +84,14 @@ async function sendNominationToUser(userId: number, nom: any) {
     for (const v of videos) {
       try {
         await bot.api.sendVideo(userId, v.file_id, { caption: v.participant_nick || '' });
-      } catch (e) {
-        // ignore per-video errors
-      }
+      } catch (e) {}
     }
     const kb = new InlineKeyboard();
     for (const v of videos) kb.text(v.participant_nick || `#${v.id}`, `vote:${nom.id}:${v.id}`);
     await bot.api.sendMessage(userId, 'Выбери участника:', { reply_markup: kb });
-  } catch (e) {
-    // cannot send private message (user didn't start bot or blocked)
-  }
+  } catch (e) {}
 }
 
-// Accept video messages with caption: /add_video <nomination_id> <nick>
 bot.on('message', async (ctx) => {
   const msg = ctx.message as any;
   const caption: string | undefined = msg?.caption;
@@ -113,19 +101,14 @@ bot.on('message', async (ctx) => {
     const nominationId = Number(parts[1]);
     const nick = parts.slice(2).join(' ');
     if (!nominationId || !nick) return ctx.reply('Неверные параметры.');
-    // get file id
     const fileId = msg.video?.file_id || msg.document?.file_id;
     if (!fileId) return ctx.reply('Прикрепите видео (как video или документ).');
     const res = db.addVideo(nominationId, fileId, nick);
     return ctx.reply(`Видео добавлено id=${res.id} к номинации ${nominationId}`);
   }
-
-  // fallback
-  if (msg.text && msg.text.startsWith('/')) return; // other commands
-  await ctx.reply('Используйте /start или админ-команды.');
+  if (msg.text && msg.text.startsWith('/')) return;
 });
 
-// Handle vote callbacks: data format vote:<nominationId>:<videoId>
 bot.callbackQuery(/^vote:/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const data = ctx.callbackQuery.data || '';
@@ -160,7 +143,6 @@ bot.callbackQuery(/^vote:/, async (ctx) => {
     await ctx.reply(text);
   }
 
-  // Advance this user's position and send next nomination (if any)
   const nextPos = db.advanceUserPosition(userId);
   const nextNom = db.getNominationByPosition(nextPos);
   if (nextNom) {
@@ -168,13 +150,10 @@ bot.callbackQuery(/^vote:/, async (ctx) => {
   } else {
     try {
       await bot.api.sendMessage(userId, 'Новых номинаций пока нет.');
-    } catch (e) {
-      // ignore
-    }
+    } catch (e) {}
   }
 });
 
-// Admin: export results to CSV and send as document
 bot.command('export_results', async (ctx) => {
   const fromId = ctx.from?.id;
   if (!isAdmin(fromId)) return ctx.reply('Нет прав.');
@@ -182,14 +161,12 @@ bot.command('export_results', async (ctx) => {
   const fn = `/data/results_${Date.now()}.csv`;
   try {
     fs.writeFileSync(fn, csv, 'utf8');
-    // Type cast to any because grammy InputFile types differ across versions
     await ctx.replyWithDocument({ source: fs.createReadStream(fn) } as any);
   } catch (e) {
     await ctx.reply('Ошибка при создании файла результатов.');
   }
 });
 
-// Admin: toggle repeat-vote allowance
 bot.command('set_repeat_vote', async (ctx) => {
   const fromId = ctx.from?.id;
   if (!isAdmin(fromId)) return ctx.reply('Нет прав.');
@@ -201,7 +178,6 @@ bot.command('set_repeat_vote', async (ctx) => {
   return ctx.reply(`Повторное голосование теперь ${arg === 'on' ? 'разрешено' : 'запрещено'}`);
 });
 
-// Admin: close nomination by id
 bot.command('close_nomination', async (ctx) => {
   const fromId = ctx.from?.id;
   if (!isAdmin(fromId)) return ctx.reply('Нет прав.');
@@ -230,7 +206,6 @@ if (process.env.DISABLE_TELEGRAM === 'true') {
   (async () => {
     try {
       if (ADMIN_IDS && ADMIN_IDS.length > 0) {
-        // register commands only for each admin's private chat so ordinary users don't see slash-commands
         for (const aid of ADMIN_IDS) {
           const idNum = Number(aid);
           if (!isNaN(idNum)) {
