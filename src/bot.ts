@@ -64,6 +64,46 @@ export async function startBot(token: string, db: any) {
     }
     await bot.start();
     console.log('Bot started');
+    // send admin status summary on startup
+    try {
+      const noms = db.selectAllNominations ? db.selectAllNominations() : [];
+      let videosCount = 0;
+      if (db.db) {
+        try { videosCount = db.db.prepare('SELECT COUNT(*) as c FROM videos').get()?.c || 0; } catch (e) { videosCount = 0; }
+      } else if (db.selectAllNominations && db.selectVideosByNomination) {
+        for (const n of noms) { const vs = db.selectVideosByNomination(n.id) || []; videosCount += vs.length; }
+      }
+      const accepting = db.getSetting ? db.getSetting('accepting_applications') : '1';
+      const repeat = db.getSetting ? db.getSetting('repeat_votes_allowed') : '1';
+      const dbPath = process.env.DB_PATH || 'unknown';
+      const lines = [
+        `Бот запущен на сервере.`,
+        `Номинаций: ${noms.length}`,
+        `Видео: ${videosCount}`,
+        `Приём заявок: ${accepting === '1' ? 'включён' : 'закрыт'}`,
+        `Повторное голосование: ${repeat === '1' ? 'разрешено' : 'запрещено'}`,
+        `DB: ${dbPath}`,
+      ];
+      const text = lines.join('\n');
+      // send to numeric admin ids
+      if (ADMIN_IDS && ADMIN_IDS.length > 0) {
+        for (const aid of ADMIN_IDS) {
+          const idNum = Number(aid);
+          if (!isNaN(idNum)) {
+            try { await bot.api.sendMessage(idNum, text); } catch (e) { console.warn('send admin status failed for', aid, e); }
+          }
+        }
+      }
+      // also attempt usernames
+      if (ADMIN_USERNAMES && ADMIN_USERNAMES.length > 0) {
+        for (const uname of ADMIN_USERNAMES) {
+          const target = uname.startsWith('@') ? uname : `@${uname}`;
+          try { await bot.api.sendMessage(target, text); } catch (e) { console.warn('send admin status failed for', target, e); }
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to send admin startup status', e);
+    }
   }
 
   return bot;
