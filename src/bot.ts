@@ -36,9 +36,9 @@ export async function startBot(token: string, db: any) {
     // `me` команда оставлена, но не показывается в меню
     { command: CommandNames.Add, description: 'Добавить номинацию' },
     { command: CommandNames.List, description: 'Показать номинации' },
-    { command: CommandNames.Delete, description: 'Удалить номинацию' },
+    { command: CommandNames.Remove, description: 'Удалить номинацию' },
     { command: CommandNames.Survey, description: 'Возобновить/остановить голосование' },
-    { command: CommandNames.RepeatVote, description: 'Переключить повторные голоса' },
+    { command: CommandNames.RepeatVote, description: 'Разрешить/запретить повторное голосование' },
     { command: CommandNames.Results, description: 'Экспорт результатов' },
   ];
 

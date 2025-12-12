@@ -56,8 +56,14 @@ export function registerHandlers(bot: Bot, db: any, isAdmin: (user?: { id?: numb
             return;
           }
           // any non-video message or command ends collection
+          const vids = db.selectVideosByNomination(session.nominationId) || [];
           sessions.endSession(userId);
-          await ctx.reply('Добавление видео завершено.');
+          if (!vids || vids.length < 2) {
+            try { nominationService.deleteNomination(db, session.nominationId); } catch (e) {}
+            await ctx.reply('Ошибка: для номинации требуется минимум 2 видео. Номинация не создана.');
+          } else {
+            await ctx.reply('Добавление видео завершено.');
+          }
           return;
         }
 
@@ -198,7 +204,7 @@ export async function sendNominationToUser(bot: Bot, db: any, userId: number, no
       }
     }
     const kb = new InlineKeyboard();
-    for (const v of first) kb.text(v.participant_nick || `#${v.id}`, `vote:${nom.id}:${v.id}`);
+    for (const v of first) kb.text(v.participant_nick || `#${v.id}`, `vote:${nom.id}:${v.id}`).row();
     await bot.api.sendMessage(userId, 'Выбери участника:', { reply_markup: kb });
   } catch (e) { /* ignore send errors */ }
 }

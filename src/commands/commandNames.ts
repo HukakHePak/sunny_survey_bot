@@ -5,7 +5,7 @@ export enum CommandNames {
   RepeatVote = 'repeat_vote',
   Survey = 'survey',
   List = 'list',
-  Delete = 'delete_nomination',
+  Remove = 'remove',
 }
 
 export default CommandNames;
