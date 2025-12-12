@@ -1,4 +1,6 @@
 import { Bot, InlineKeyboard, Keyboard } from 'grammy';
+import fs from 'fs';
+import path from 'path';
 import * as votingService from '../services/votingService';
 import * as nominationService from '../services/nominationService';
 import * as userService from '../services/userService';
@@ -83,7 +85,34 @@ export function registerHandlers(
             if (!nick) {
               await ctx.reply('Ошибка: видео должно содержать имя участника в подписи. Видео не добавлено.');
             } else {
-              const res = nominationService.addVideoToNomination(db, session.nominationId, fileId, nick);
+              // attempt to download file and store locally
+              let localPath: string | undefined = undefined;
+              try {
+                const f = await bot.api.getFile(fileId);
+                if (f && (f as any).file_path) {
+                  const filePath = (f as any).file_path as string;
+                  const url = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${filePath}`;
+                  const videosDir = path.resolve('./data/videos');
+                  try { fs.mkdirSync(videosDir, { recursive: true }); } catch (e) {}
+                  const fname = `${Date.now()}-${Math.random().toString(36).slice(2,8)}.mp4`;
+                  const saveTo = path.join(videosDir, fname);
+                  const res = await fetch(url);
+                  if (res.ok) {
+                      const dest = fs.createWriteStream(saveTo);
+                      await new Promise((resolve, reject) => {
+                        const bodyAny: any = (res as any).body;
+                        if (!bodyAny) return reject(new Error('no body'));
+                        bodyAny.pipe(dest);
+                        bodyAny.on('error', reject);
+                        dest.on('finish', resolve);
+                      });
+                    localPath = saveTo;
+                  }
+                }
+              } catch (e) {
+                // ignore download errors, we'll still record file_id
+              }
+              const res = nominationService.addVideoToNomination(db, session.nominationId, fileId, nick, localPath);
               await ctx.reply(`Видео участника "${nick}" добавлено.`);
               try {
                 const vids = db.selectVideosByNomination ? db.selectVideosByNomination(session.nominationId) : [];
@@ -130,11 +159,35 @@ export function registerHandlers(
               await ctx.reply('Ошибка: видео должно содержать имя участника в подписи. Видео не добавлено.');
               return;
             }
-            // create nomination now and add video
+            // create nomination now and add video (try to download file)
             try {
               const title = (session as { state: 'collecting_videos_pending'; title: string }).title;
               const nom = nominationService.createNomination(db, title);
-              nominationService.addVideoToNomination(db, nom.id, fileId, nick);
+              let localPath: string | undefined = undefined;
+              try {
+                const f = await bot.api.getFile(fileId);
+                if (f && (f as any).file_path) {
+                  const filePath = (f as any).file_path as string;
+                  const url = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${filePath}`;
+                  const videosDir = path.resolve('./data/videos');
+                  try { fs.mkdirSync(videosDir, { recursive: true }); } catch (e) {}
+                  const fname = `${Date.now()}-${Math.random().toString(36).slice(2,8)}.mp4`;
+                  const saveTo = path.join(videosDir, fname);
+                  const res = await fetch(url);
+                  if (res.ok) {
+                    const dest = fs.createWriteStream(saveTo);
+                    await new Promise((resolve, reject) => {
+                      const bodyAny: any = (res as any).body;
+                      if (!bodyAny) return reject(new Error('no body'));
+                      bodyAny.pipe(dest);
+                      bodyAny.on('error', reject);
+                      dest.on('finish', resolve);
+                    });
+                    localPath = saveTo;
+                  }
+                }
+              } catch (e) {}
+              nominationService.addVideoToNomination(db, nom.id, fileId, nick, localPath);
               sessions.startCollecting(userId, nom.id);
               // send control keyboard (Сохранить / Отмена)
               const kb = new Keyboard().text('Сохранить').text('Отмена');
@@ -406,8 +459,14 @@ export async function sendNominationToUser(
     // send up to 4 videos
     for (const v of first) {
       try {
-        const m = await bot.api.sendVideo(userId, v.file_id, { caption: v.participant_nick || '' });
-        try { if (pushMsg) pushMsg(userId, m); } catch (e) {}
+        if (v.local_path) {
+          const stream = fs.createReadStream(v.local_path);
+          const m = await bot.api.sendVideo(userId, { source: stream } as any, { caption: v.participant_nick || '' });
+          try { if (pushMsg) pushMsg(userId, m); } catch (e) {}
+        } else {
+          const m = await bot.api.sendVideo(userId, v.file_id, { caption: v.participant_nick || '' });
+          try { if (pushMsg) pushMsg(userId, m); } catch (e) {}
+        }
       } catch (e) {
         try { const m = await bot.api.sendMessage(userId, `${v.participant_nick || ''} — видео недоступно`); if (pushMsg) pushMsg(userId, m); } catch (e) {}
       }

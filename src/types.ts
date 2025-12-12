@@ -9,11 +9,12 @@ export type Video = {
   nomination_id: number;
   title?: string;
   file_id: string;
+  local_path?: string;
   participant_nick?: string;
 };
 
 export interface NominationRow { id: number; title: string; position: number; closed?: number }
-export interface VideoRow { id: number; nomination_id: number; title?: string; file_id: string; participant_nick?: string }
+export interface VideoRow { id: number; nomination_id: number; title?: string; file_id: string; participant_nick?: string; local_path?: string }
 export interface VoteRow { id: number; user_id: number; nomination_id: number; video_id: number }
 export interface ResultRow { nomination_id: number; nomination_title: string; video_id: number; participant_nick?: string; file_id?: string; votes: number }
 
@@ -23,7 +24,7 @@ export interface DbAPI {
   db?: Database;
   getMaxPosition?: () => number;
   insertNomination?: (title: string, position: number) => { id: number };
-  insertVideo?: (nominationId: number, fileId: string, participantNick?: string, title?: string) => { id: number };
+  insertVideo?: (nominationId: number, fileId: string, participantNick?: string, title?: string, localPath?: string) => { id: number };
   selectNominationByPosition?: (pos: number) => NominationRow | null;
   selectNominationById?: (id: number) => NominationRow | null;
   selectVideosByNomination?: (nominationId: number) => VideoRow[];

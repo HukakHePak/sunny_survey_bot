@@ -30,6 +30,7 @@ export function initDb(dbPath: string) {
       nomination_id INTEGER NOT NULL,
       title TEXT,
       file_id TEXT NOT NULL,
+      local_path TEXT,
       participant_nick TEXT,
       FOREIGN KEY(nomination_id) REFERENCES nominations(id)
     )`
@@ -70,8 +71,16 @@ export function initDb(dbPath: string) {
 
   function insertVideo(nominationId: number, fileId: string, participantNick?: string, title?: string) {
     const info = db
-      .prepare('INSERT INTO videos (nomination_id, title, file_id, participant_nick) VALUES (?, ?, ?, ?)')
-      .run(nominationId, title || null, fileId, participantNick || null);
+      .prepare('INSERT INTO videos (nomination_id, title, file_id, local_path, participant_nick) VALUES (?, ?, ?, ?, ?)')
+      .run(nominationId, title || null, fileId, null, participantNick || null);
+    return { id: info.lastInsertRowid as number };
+  }
+
+  // new insert that accepts local_path when available
+  function insertVideoWithLocal(nominationId: number, fileId: string, participantNick?: string, title?: string, localPath?: string) {
+    const info = db
+      .prepare('INSERT INTO videos (nomination_id, title, file_id, local_path, participant_nick) VALUES (?, ?, ?, ?, ?)')
+      .run(nominationId, title || null, fileId, localPath || null, participantNick || null);
     return { id: info.lastInsertRowid as number };
   }
 
@@ -180,7 +189,7 @@ export function initDb(dbPath: string) {
     // primitives
     getMaxPosition,
     insertNomination,
-    insertVideo,
+    insertVideo: insertVideoWithLocal,
     selectNominationByPosition,
     selectNominationById,
     selectVideosByNomination,

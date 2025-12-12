@@ -14,9 +14,16 @@ export function getNominationByPosition(db: DbAPI, pos: number) {
   return db.selectNominationByPosition ? db.selectNominationByPosition(pos) : null;
 }
 
-export function addVideoToNomination(db: DbAPI, nominationId: number, fileId: string, nick: string) {
+export function addVideoToNomination(db: DbAPI, nominationId: number, fileId: string, nick: string, localPath?: string) {
   if (!nominationId || !fileId) throw new Error('invalid params');
-  return db.insertVideo ? db.insertVideo(nominationId, fileId, nick || '') : { id: 0 };
+  if (!db.insertVideo) return { id: 0 };
+  // maintain backward compatibility with DB implementations that expect (nominationId, fileId, nick)
+  try {
+    if ((db.insertVideo as any).length >= 5) {
+      return db.insertVideo(nominationId, fileId, nick || '', undefined, localPath);
+    }
+  } catch (e) {}
+  return db.insertVideo(nominationId, fileId, nick || '');
 }
 
 export function exportResults(db: DbAPI) {
